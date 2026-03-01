@@ -7,6 +7,7 @@
 <script src="https://cdn.jsdelivr.net/npm/hls.js@1"></script>
 <style>
 *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
 
 :root {
   --cyan: #00e5ff;
@@ -446,9 +447,47 @@ body::after {
 body.livetv-on .player-wrap { display: flex; }
 body.livetv-on .topbar       { top: 280px; }
 body.livetv-on .header-row   { top: calc(280px + var(--topbar-h)); }
-body.livetv-on .detail-bar   { top: calc(280px + var(--topbar-h) + var(--header-h)); }
 body.livetv-on .guide-wrap   { top: calc(280px + var(--topbar-h) + var(--header-h)); }
-body.livetv-on .guide-wrap.with-detail { top: calc(280px + var(--topbar-h) + var(--header-h) + var(--detail-h)); }
+
+.player-main {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+}
+
+.player-sidebar {
+  width: 280px;
+  flex-shrink: 0;
+  background: #111;
+  border-left: 1px solid var(--border);
+  padding: 12px;
+  display: flex;
+  flex-flow: row wrap;
+  align-items: flex-start;
+  align-content: flex-start;
+  gap: 8px;
+  overflow: hidden;
+}
+
+.player-sidebar .detail-ch {
+  min-width: 0;
+  gap: 6px;
+}
+
+.player-sidebar .detail-poster {
+  width: 48px;
+  height: 72px;
+}
+
+.player-sidebar .detail-info {
+  flex: 0 0 100%;
+}
+
+.player-sidebar .detail-desc {
+  -webkit-line-clamp: 5;
+}
+
+body.livetv-on .detail-bar { display: none !important; }
 
 .player-video-area {
   flex: 1;
@@ -614,6 +653,8 @@ body.livetv-on .guide-wrap.with-detail { top: calc(280px + var(--topbar-h) + var
   .detail-ch-number { font-size: 16px; }
   .detail-poster { width: 48px; height: 72px; }
   .player-wrap { height: 200px; }
+  .player-sidebar { display: none; }
+  body.livetv-on .detail-bar { display: flex !important; }
   body.livetv-on .topbar       { top: 200px; }
   body.livetv-on .header-row   { top: calc(200px + var(--topbar-h)); }
   body.livetv-on .detail-bar   { top: calc(200px + var(--topbar-h) + var(--header-h)); }
@@ -634,19 +675,22 @@ body.livetv-on .guide-wrap.with-detail { top: calc(280px + var(--topbar-h) + var
 </div>
 
 <div class="player-wrap" id="playerWrap">
-  <div class="player-video-area">
-    <video id="liveVideo" autoplay muted playsinline></video>
-    <div class="player-unmute-overlay" id="unmuteOverlay">
-      <div class="player-unmute-label">CLICK TO UNMUTE</div>
+  <div class="player-main">
+    <div class="player-video-area">
+      <video id="liveVideo" autoplay muted playsinline></video>
+      <div class="player-unmute-overlay" id="unmuteOverlay">
+        <div class="player-unmute-label">CLICK TO UNMUTE</div>
+      </div>
+      <div class="player-loading-overlay" id="playerLoading">
+        <div class="player-spinner"></div>
+        <span>Tuning...</span>
+      </div>
+      <div class="player-error-overlay" id="playerError">
+        <div class="player-error-msg" id="playerErrorMsg">Playback error.</div>
+        <button class="player-retry-btn" id="playerRetryBtn">RETRY</button>
+      </div>
     </div>
-    <div class="player-loading-overlay" id="playerLoading">
-      <div class="player-spinner"></div>
-      <span>Tuning...</span>
-    </div>
-    <div class="player-error-overlay" id="playerError">
-      <div class="player-error-msg" id="playerErrorMsg">Playback error.</div>
-      <button class="player-retry-btn" id="playerRetryBtn">RETRY</button>
-    </div>
+    <div class="player-sidebar" id="playerSidebar"></div>
   </div>
   <div class="player-now-bar" id="playerNowBar">
     <strong>LIVE TV</strong> <span id="playerNowText">--</span>
@@ -676,7 +720,8 @@ body.livetv-on .guide-wrap.with-detail { top: calc(280px + var(--topbar-h) + var
   var headerTL   = document.getElementById('headerTimeline');
   var clockEl    = document.getElementById('clock');
   var dateEl     = document.getElementById('date');
-  var detailBar  = document.getElementById('detailBar');
+  var detailBar     = document.getElementById('detailBar');
+  var playerSidebar = document.getElementById('playerSidebar');
 
   var autoScroll   = true;
   var scrollSpeed  = 18; // px/sec
@@ -964,9 +1009,15 @@ body.livetv-on .guide-wrap.with-detail { top: calc(280px + var(--topbar-h) + var
       h += '</div>';
     }
 
-    detailBar.innerHTML = h;
-    detailBar.className = 'detail-bar active';
-    scrollEl.className = 'guide-wrap with-detail';
+    if (liveTVEnabled) {
+      playerSidebar.innerHTML = h;
+      detailBar.className = 'detail-bar';
+      scrollEl.className = 'guide-wrap';
+    } else {
+      detailBar.innerHTML = h;
+      detailBar.className = 'detail-bar active';
+      scrollEl.className = 'guide-wrap with-detail';
+    }
   }
 
   // ── Live TV module ──
