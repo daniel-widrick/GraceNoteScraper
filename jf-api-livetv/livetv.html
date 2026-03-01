@@ -1,0 +1,1083 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Jellyfin Live TV</title>
+<script src="https://cdn.jsdelivr.net/npm/hls.js@1"></script>
+<style>
+  :root {
+    --bg-primary: #0f0f13;
+    --bg-secondary: #1a1a24;
+    --bg-tertiary: #24243a;
+    --text-primary: #e8e8f0;
+    --text-secondary: #9898b0;
+    --accent: #5c5cff;
+    --accent-hover: #7070ff;
+    --border: #2a2a40;
+    --danger: #ff4444;
+    --success: #44cc66;
+  }
+
+  *, *::before, *::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    height: 100vh;
+    overflow: hidden;
+  }
+
+  /* Setup screen */
+  #setup-screen {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+    padding: 20px;
+  }
+
+  .setup-card {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 40px;
+    max-width: 440px;
+    width: 100%;
+  }
+
+  .setup-card h1 {
+    font-size: 24px;
+    margin-bottom: 8px;
+  }
+
+  .setup-card p {
+    color: var(--text-secondary);
+    font-size: 14px;
+    margin-bottom: 24px;
+  }
+
+  .form-group {
+    margin-bottom: 16px;
+  }
+
+  .form-group label {
+    display: block;
+    font-size: 13px;
+    color: var(--text-secondary);
+    margin-bottom: 6px;
+  }
+
+  .form-group input {
+    width: 100%;
+    padding: 10px 12px;
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text-primary);
+    font-size: 14px;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+
+  .form-group input:focus {
+    border-color: var(--accent);
+  }
+
+  .btn {
+    padding: 10px 20px;
+    border: none;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+
+  .btn-primary {
+    background: var(--accent);
+    color: white;
+    width: 100%;
+    margin-top: 8px;
+  }
+
+  .btn-primary:hover {
+    background: var(--accent-hover);
+  }
+
+  .btn-secondary {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+  }
+
+  .btn-secondary:hover {
+    background: var(--border);
+  }
+
+  .setup-error {
+    color: var(--danger);
+    font-size: 13px;
+    margin-top: 12px;
+    display: none;
+  }
+
+  /* Main app layout */
+  #app {
+    display: none;
+    height: 100vh;
+    flex-direction: column;
+  }
+
+  .top-bar {
+    display: flex;
+    align-items: center;
+    padding: 8px 16px;
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border);
+    gap: 8px;
+    flex-shrink: 0;
+  }
+
+  .top-bar h2 {
+    font-size: 16px;
+    font-weight: 600;
+    flex: 1;
+  }
+
+  .icon-btn {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--text-secondary);
+    width: 34px;
+    height: 34px;
+    border-radius: 6px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    transition: background 0.2s, color 0.2s;
+  }
+
+  .icon-btn:hover {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+  }
+
+  .main-content {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+  }
+
+  /* Sidebar */
+  .sidebar {
+    width: 280px;
+    background: var(--bg-secondary);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+    overflow: hidden;
+  }
+
+  .sidebar.collapsed {
+    display: none;
+  }
+
+  .channel-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px;
+  }
+
+  .channel-list::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .channel-list::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .channel-list::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border-radius: 3px;
+  }
+
+  .channel-card {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px;
+    border-radius: 8px;
+    cursor: pointer;
+    border-left: 3px solid transparent;
+    transition: background 0.15s, border-color 0.15s;
+  }
+
+  .channel-card:hover {
+    background: var(--bg-tertiary);
+  }
+
+  .channel-card.active {
+    background: var(--bg-tertiary);
+    border-left-color: var(--accent);
+  }
+
+  .channel-logo {
+    width: 40px;
+    height: 40px;
+    border-radius: 6px;
+    object-fit: cover;
+    background: var(--bg-tertiary);
+    flex-shrink: 0;
+  }
+
+  .channel-logo-fallback {
+    width: 40px;
+    height: 40px;
+    border-radius: 6px;
+    background: var(--accent);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    font-weight: 700;
+    color: white;
+    flex-shrink: 0;
+  }
+
+  .channel-info {
+    overflow: hidden;
+    min-width: 0;
+  }
+
+  .channel-name {
+    font-size: 13px;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .channel-number {
+    color: var(--text-secondary);
+    font-size: 11px;
+  }
+
+  .channel-program {
+    font-size: 12px;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-top: 2px;
+  }
+
+  /* Player area */
+  .player-area {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    background: #000;
+    position: relative;
+    min-width: 0;
+  }
+
+  .video-container {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    overflow: hidden;
+  }
+
+  #video-player {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    background: #000;
+  }
+
+  .player-placeholder {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    color: var(--text-secondary);
+    gap: 12px;
+  }
+
+  .player-placeholder svg {
+    width: 64px;
+    height: 64px;
+    opacity: 0.3;
+  }
+
+  /* Loading overlay */
+  .loading-overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(15, 15, 19, 0.85);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 16px;
+    z-index: 10;
+  }
+
+  .loading-overlay.visible {
+    display: flex;
+  }
+
+  .spinner {
+    width: 40px;
+    height: 40px;
+    border: 3px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+
+  .loading-overlay span {
+    font-size: 14px;
+    color: var(--text-secondary);
+  }
+
+  /* Error overlay */
+  .error-overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(15, 15, 19, 0.9);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 16px;
+    z-index: 11;
+    padding: 20px;
+  }
+
+  .error-overlay.visible {
+    display: flex;
+  }
+
+  .error-overlay .error-msg {
+    color: var(--danger);
+    font-size: 14px;
+    text-align: center;
+    max-width: 400px;
+  }
+
+  /* Now playing bar */
+  .now-playing-bar {
+    padding: 8px 16px;
+    background: var(--bg-secondary);
+    border-top: 1px solid var(--border);
+    font-size: 13px;
+    color: var(--text-secondary);
+    flex-shrink: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .now-playing-bar strong {
+    color: var(--text-primary);
+  }
+
+  /* Modal */
+  .modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.6);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+    padding: 20px;
+  }
+
+  .modal-backdrop.visible {
+    display: flex;
+  }
+
+  .modal {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 28px;
+    max-width: 440px;
+    width: 100%;
+  }
+
+  .modal h3 {
+    font-size: 18px;
+    margin-bottom: 20px;
+  }
+
+  .modal-actions {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+    margin-top: 20px;
+  }
+
+  /* Responsive */
+  @media (max-width: 700px) {
+    .sidebar {
+      width: 100%;
+      max-height: 40vh;
+      border-right: none;
+      border-bottom: 1px solid var(--border);
+    }
+    .main-content {
+      flex-direction: column;
+    }
+  }
+</style>
+</head>
+<body>
+
+<!-- Setup Screen -->
+<div id="setup-screen">
+  <div class="setup-card">
+    <h1>Jellyfin Live TV</h1>
+    <p>Connect to your Jellyfin server to watch live TV in the browser.</p>
+    <div class="form-group">
+      <label for="setup-url">Server URL</label>
+      <input type="url" id="setup-url" placeholder="http://jellyfin.home.widrick.net:8096" value="http://jellyfin.home.widrick.net:8096">
+    </div>
+    <div class="form-group">
+      <label for="setup-key">API Key</label>
+      <input type="password" id="setup-key" placeholder="Your Jellyfin API key">
+    </div>
+    <button class="btn btn-primary" id="setup-connect">Connect</button>
+    <div class="setup-error" id="setup-error"></div>
+  </div>
+</div>
+
+<!-- Main App -->
+<div id="app">
+  <div class="top-bar">
+    <button class="icon-btn" id="btn-toggle-sidebar" title="Toggle channels">&#9776;</button>
+    <h2>Live TV</h2>
+    <button class="icon-btn" id="btn-refresh" title="Refresh channels">&#8635;</button>
+    <button class="icon-btn" id="btn-settings" title="Settings">&#9881;</button>
+  </div>
+  <div class="main-content">
+    <div class="sidebar" id="sidebar">
+      <div class="channel-list" id="channel-list"></div>
+    </div>
+    <div class="player-area">
+      <div class="video-container" id="video-container">
+        <div class="player-placeholder" id="player-placeholder">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <rect x="2" y="4" width="20" height="14" rx="2"/>
+            <path d="M10 9l5 3-5 3V9z"/>
+            <line x1="7" y1="22" x2="17" y2="22"/>
+            <line x1="12" y1="18" x2="12" y2="22"/>
+          </svg>
+          <span>Select a channel to start watching</span>
+        </div>
+        <video id="video-player" autoplay style="display:none;"></video>
+        <div class="loading-overlay" id="loading-overlay">
+          <div class="spinner"></div>
+          <span>Tuning...</span>
+        </div>
+        <div class="error-overlay" id="error-overlay">
+          <div class="error-msg" id="error-msg">Something went wrong.</div>
+          <button class="btn btn-primary" id="btn-retry">Retry</button>
+        </div>
+      </div>
+      <div class="now-playing-bar" id="now-playing-bar">
+        Not playing
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Settings Modal -->
+<div class="modal-backdrop" id="settings-modal">
+  <div class="modal">
+    <h3>Settings</h3>
+    <div class="form-group">
+      <label for="settings-url">Server URL</label>
+      <input type="url" id="settings-url">
+    </div>
+    <div class="form-group">
+      <label for="settings-key">API Key</label>
+      <input type="password" id="settings-key">
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" id="settings-disconnect">Disconnect</button>
+      <button class="btn btn-secondary" id="settings-cancel">Cancel</button>
+      <button class="btn btn-primary" id="settings-save">Save</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function() {
+  'use strict';
+
+  // --- State ---
+  let serverUrl = '';
+  let apiKey = '';
+  let channels = [];
+  let activeChannelId = null;
+  let hlsInstance = null;
+  let refreshInterval = null;
+  let currentPlaySessionId = null;
+
+  // --- DOM refs ---
+  const $ = id => document.getElementById(id);
+  const setupScreen = $('setup-screen');
+  const setupUrl = $('setup-url');
+  const setupKey = $('setup-key');
+  const setupConnect = $('setup-connect');
+  const setupError = $('setup-error');
+
+  const app = $('app');
+  const sidebar = $('sidebar');
+  const channelList = $('channel-list');
+  const videoPlayer = $('video-player');
+  const playerPlaceholder = $('player-placeholder');
+  const loadingOverlay = $('loading-overlay');
+  const errorOverlay = $('error-overlay');
+  const errorMsg = $('error-msg');
+  const nowPlayingBar = $('now-playing-bar');
+
+  const settingsModal = $('settings-modal');
+  const settingsUrl = $('settings-url');
+  const settingsKey = $('settings-key');
+
+  // --- Helpers ---
+  function apiHeaders() {
+    return {
+      'Authorization': `MediaBrowser Token="${apiKey}"`,
+      'Content-Type': 'application/json'
+    };
+  }
+
+  async function apiFetch(path, options = {}) {
+    const url = serverUrl.replace(/\/+$/, '') + path;
+    const resp = await fetch(url, {
+      ...options,
+      headers: { ...apiHeaders(), ...(options.headers || {}) }
+    });
+    if (resp.status === 401) {
+      throw new Error('Invalid API key. Please check your settings.');
+    }
+    if (!resp.ok) {
+      throw new Error(`API error: ${resp.status} ${resp.statusText}`);
+    }
+    // Some endpoints return no body (204, etc.)
+    const text = await resp.text();
+    return text ? JSON.parse(text) : null;
+  }
+
+  function showSetupError(msg) {
+    setupError.textContent = msg;
+    setupError.style.display = 'block';
+  }
+
+  function hideSetupError() {
+    setupError.style.display = 'none';
+  }
+
+  function showLoading() {
+    loadingOverlay.classList.add('visible');
+    errorOverlay.classList.remove('visible');
+  }
+
+  function hideLoading() {
+    loadingOverlay.classList.remove('visible');
+  }
+
+  function showError(msg) {
+    errorMsg.textContent = msg;
+    errorOverlay.classList.add('visible');
+    hideLoading();
+  }
+
+  function hideError() {
+    errorOverlay.classList.remove('visible');
+  }
+
+  // --- Channel Logo ---
+  function channelLogoUrl(channelId) {
+    return serverUrl.replace(/\/+$/, '') + `/Items/${channelId}/Images/Primary?maxHeight=80&maxWidth=80&quality=90&ApiKey=${encodeURIComponent(apiKey)}`;
+  }
+
+  function makeLogoFallback(channel) {
+    const el = document.createElement('div');
+    el.className = 'channel-logo-fallback';
+    // Generate a deterministic color from channel name
+    let hash = 0;
+    const name = channel.Name || '';
+    for (let i = 0; i < name.length; i++) {
+      hash = name.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    const hue = Math.abs(hash) % 360;
+    el.style.background = `hsl(${hue}, 50%, 40%)`;
+    el.textContent = channel.ChannelNumber || '#';
+    return el;
+  }
+
+  // --- Render Channels ---
+  function renderChannels() {
+    channelList.innerHTML = '';
+    channels.forEach(ch => {
+      const card = document.createElement('div');
+      card.className = 'channel-card' + (ch.Id === activeChannelId ? ' active' : '');
+      card.dataset.id = ch.Id;
+
+      // Logo
+      const img = document.createElement('img');
+      img.className = 'channel-logo';
+      img.src = channelLogoUrl(ch.Id);
+      img.alt = '';
+      img.loading = 'lazy';
+      img.onerror = function() {
+        const fallback = makeLogoFallback(ch);
+        this.replaceWith(fallback);
+      };
+
+      // Info
+      const info = document.createElement('div');
+      info.className = 'channel-info';
+
+      const nameEl = document.createElement('div');
+      nameEl.className = 'channel-name';
+      nameEl.textContent = ch.Name || 'Unknown';
+
+      const numEl = document.createElement('div');
+      numEl.className = 'channel-number';
+      numEl.textContent = ch.ChannelNumber ? `Ch ${ch.ChannelNumber}` : '';
+
+      const progEl = document.createElement('div');
+      progEl.className = 'channel-program';
+      const currentProg = ch.CurrentProgram;
+      if (currentProg) {
+        progEl.textContent = currentProg.Name || '';
+      }
+
+      info.appendChild(nameEl);
+      info.appendChild(numEl);
+      info.appendChild(progEl);
+
+      card.appendChild(img);
+      card.appendChild(info);
+
+      card.addEventListener('click', () => tuneToChannel(ch));
+      channelList.appendChild(card);
+    });
+  }
+
+  // --- Fetch Channels ---
+  async function fetchChannels() {
+    const data = await apiFetch('/LiveTv/Channels?SortBy=SortName&SortOrder=Ascending&AddCurrentProgram=true');
+    channels = data.Items || [];
+    renderChannels();
+  }
+
+  // --- Device Profile for HLS ---
+  function getDeviceProfile() {
+    return {
+      MaxStreamingBitrate: 20000000,
+      MaxStaticBitrate: 100000000,
+      MusicStreamingTranscodingBitrate: 192000,
+      DirectPlayProfiles: [],
+      TranscodingProfiles: [
+        {
+          Container: 'ts',
+          Type: 'Video',
+          AudioCodec: 'aac,mp3',
+          VideoCodec: 'h264',
+          Context: 'Streaming',
+          Protocol: 'hls',
+          MinSegments: 1,
+          BreakOnNonKeyFrames: true
+        }
+      ],
+      ContainerProfiles: [],
+      CodecProfiles: [
+        {
+          Type: 'Video',
+          Codec: 'h264',
+          Conditions: [
+            {
+              Condition: 'NotEquals',
+              Property: 'IsAnamorphic',
+              Value: 'true',
+              IsRequired: false
+            },
+            {
+              Condition: 'EqualsAny',
+              Property: 'VideoProfile',
+              Value: 'high|main|baseline|constrained baseline',
+              IsRequired: false
+            },
+            {
+              Condition: 'LessThanEqual',
+              Property: 'VideoLevel',
+              Value: '52',
+              IsRequired: false
+            }
+          ]
+        }
+      ],
+      SubtitleProfiles: [],
+      ResponseProfiles: []
+    };
+  }
+
+  // --- Stop Current Stream ---
+  async function stopCurrentStream() {
+    if (hlsInstance) {
+      hlsInstance.destroy();
+      hlsInstance = null;
+    }
+
+    videoPlayer.pause();
+    videoPlayer.removeAttribute('src');
+    videoPlayer.style.display = 'none';
+
+    if (currentPlaySessionId) {
+      try {
+        await apiFetch('/Sessions/Playing/Stopped', {
+          method: 'POST',
+          body: JSON.stringify({
+            PlaySessionId: currentPlaySessionId
+          })
+        });
+      } catch (e) {
+        // Best-effort cleanup
+      }
+      currentPlaySessionId = null;
+    }
+  }
+
+  // --- Tune to Channel ---
+  async function tuneToChannel(channel) {
+    hideError();
+    showLoading();
+
+    // Stop previous stream
+    await stopCurrentStream();
+
+    activeChannelId = channel.Id;
+    renderChannels();
+
+    // Update now-playing bar
+    const progName = channel.CurrentProgram ? channel.CurrentProgram.Name : '';
+    nowPlayingBar.innerHTML = `<strong>Now Playing:</strong> ${escapeHtml(channel.Name)}${progName ? ' - ' + escapeHtml(progName) : ''}`;
+
+    try {
+      // Get playback info
+      const playbackInfo = await apiFetch(
+        `/Items/${channel.Id}/PlaybackInfo?StartTimeTicks=0&IsPlayback=true&AutoOpenLiveStream=true`,
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            DeviceProfile: getDeviceProfile()
+          })
+        }
+      );
+
+      const mediaSources = playbackInfo.MediaSources;
+      if (!mediaSources || mediaSources.length === 0) {
+        throw new Error('No media sources available for this channel.');
+      }
+
+      const source = mediaSources[0];
+      currentPlaySessionId = playbackInfo.PlaySessionId || source.PlaySessionId || null;
+
+      const transcodingUrl = source.TranscodingUrl;
+      if (!transcodingUrl) {
+        throw new Error('No transcoding URL returned. The channel may not be available.');
+      }
+
+      // Build full stream URL with API key for HLS sub-requests
+      const streamUrl = serverUrl.replace(/\/+$/, '') + transcodingUrl +
+        (transcodingUrl.includes('?') ? '&' : '?') +
+        `ApiKey=${encodeURIComponent(apiKey)}`;
+
+      // Start playback
+      playerPlaceholder.style.display = 'none';
+      videoPlayer.style.display = 'block';
+
+      if (canPlayHlsNatively()) {
+        // Safari native HLS
+        videoPlayer.src = streamUrl;
+        videoPlayer.addEventListener('canplay', function onCanPlay() {
+          hideLoading();
+          videoPlayer.removeEventListener('canplay', onCanPlay);
+        });
+        videoPlayer.addEventListener('error', function onErr() {
+          showError('Playback error. Try another channel or check your connection.');
+          videoPlayer.removeEventListener('error', onErr);
+        });
+        videoPlayer.play().catch(() => {});
+      } else if (Hls.isSupported()) {
+        hlsInstance = new Hls({
+          enableWorker: true,
+          lowLatencyMode: false,
+          maxBufferLength: 30,
+          maxMaxBufferLength: 60
+        });
+
+        hlsInstance.loadSource(streamUrl);
+        hlsInstance.attachMedia(videoPlayer);
+
+        hlsInstance.on(Hls.Events.MANIFEST_PARSED, () => {
+          hideLoading();
+          videoPlayer.play().catch(() => {});
+        });
+
+        hlsInstance.on(Hls.Events.ERROR, (event, data) => {
+          if (data.fatal) {
+            switch (data.type) {
+              case Hls.ErrorTypes.NETWORK_ERROR:
+                // Try to recover
+                hlsInstance.startLoad();
+                break;
+              case Hls.ErrorTypes.MEDIA_ERROR:
+                hlsInstance.recoverMediaError();
+                break;
+              default:
+                showError('Fatal playback error: ' + (data.details || 'Unknown error'));
+                hlsInstance.destroy();
+                hlsInstance = null;
+                break;
+            }
+          }
+        });
+      } else {
+        showError('Your browser does not support HLS playback.');
+      }
+
+    } catch (err) {
+      showError(err.message || 'Failed to tune to channel.');
+    }
+  }
+
+  function canPlayHlsNatively() {
+    const video = document.createElement('video');
+    return video.canPlayType('application/vnd.apple.mpegurl') !== '';
+  }
+
+  function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
+  // --- Init ---
+  function loadConfig() {
+    serverUrl = localStorage.getItem('jf_server_url') || '';
+    apiKey = localStorage.getItem('jf_api_key') || '';
+  }
+
+  function saveConfig() {
+    localStorage.setItem('jf_server_url', serverUrl);
+    localStorage.setItem('jf_api_key', apiKey);
+  }
+
+  function clearConfig() {
+    localStorage.removeItem('jf_server_url');
+    localStorage.removeItem('jf_api_key');
+    serverUrl = '';
+    apiKey = '';
+  }
+
+  async function validateAndConnect(url, key) {
+    serverUrl = url.replace(/\/+$/, '');
+    apiKey = key;
+    // Test connection by fetching channels
+    await apiFetch('/LiveTv/Channels?Limit=1');
+  }
+
+  async function startApp() {
+    setupScreen.style.display = 'none';
+    app.style.display = 'flex';
+
+    try {
+      await fetchChannels();
+    } catch (err) {
+      if (err.message.includes('Invalid API key')) {
+        // Go back to setup
+        clearConfig();
+        app.style.display = 'none';
+        setupScreen.style.display = 'flex';
+        showSetupError('API key is no longer valid. Please re-enter your credentials.');
+        return;
+      }
+      showError('Failed to load channels: ' + err.message);
+    }
+
+    // Auto-refresh channels every 60s
+    if (refreshInterval) clearInterval(refreshInterval);
+    refreshInterval = setInterval(async () => {
+      try {
+        await fetchChannels();
+      } catch (e) {
+        // Silent fail on background refresh
+      }
+    }, 60000);
+  }
+
+  // --- Event Listeners ---
+
+  // Setup connect
+  setupConnect.addEventListener('click', async () => {
+    hideSetupError();
+    const url = setupUrl.value.trim();
+    const key = setupKey.value.trim();
+
+    if (!url) {
+      showSetupError('Please enter a server URL.');
+      return;
+    }
+    if (!key) {
+      showSetupError('Please enter an API key.');
+      return;
+    }
+
+    setupConnect.disabled = true;
+    setupConnect.textContent = 'Connecting...';
+
+    try {
+      await validateAndConnect(url, key);
+      saveConfig();
+      startApp();
+    } catch (err) {
+      showSetupError(err.message || 'Failed to connect. Check your URL and API key.');
+    } finally {
+      setupConnect.disabled = false;
+      setupConnect.textContent = 'Connect';
+    }
+  });
+
+  // Allow Enter key on setup inputs
+  [setupUrl, setupKey].forEach(input => {
+    input.addEventListener('keydown', e => {
+      if (e.key === 'Enter') setupConnect.click();
+    });
+  });
+
+  // Toggle sidebar
+  $('btn-toggle-sidebar').addEventListener('click', () => {
+    sidebar.classList.toggle('collapsed');
+  });
+
+  // Refresh channels
+  $('btn-refresh').addEventListener('click', async () => {
+    try {
+      await fetchChannels();
+    } catch (err) {
+      showError('Failed to refresh channels: ' + err.message);
+    }
+  });
+
+  // Settings modal
+  $('btn-settings').addEventListener('click', () => {
+    settingsUrl.value = serverUrl;
+    settingsKey.value = apiKey;
+    settingsModal.classList.add('visible');
+  });
+
+  $('settings-cancel').addEventListener('click', () => {
+    settingsModal.classList.remove('visible');
+  });
+
+  $('settings-save').addEventListener('click', async () => {
+    const url = settingsUrl.value.trim();
+    const key = settingsKey.value.trim();
+
+    if (!url || !key) return;
+
+    try {
+      await validateAndConnect(url, key);
+      saveConfig();
+      settingsModal.classList.remove('visible');
+      await fetchChannels();
+    } catch (err) {
+      alert('Connection failed: ' + err.message);
+    }
+  });
+
+  $('settings-disconnect').addEventListener('click', async () => {
+    await stopCurrentStream();
+    clearConfig();
+    settingsModal.classList.remove('visible');
+    if (refreshInterval) clearInterval(refreshInterval);
+    app.style.display = 'none';
+    setupScreen.style.display = 'flex';
+    setupUrl.value = '';
+    setupKey.value = '';
+    channels = [];
+    activeChannelId = null;
+    nowPlayingBar.innerHTML = 'Not playing';
+  });
+
+  // Close modal on backdrop click
+  settingsModal.addEventListener('click', (e) => {
+    if (e.target === settingsModal) {
+      settingsModal.classList.remove('visible');
+    }
+  });
+
+  // Retry button
+  $('btn-retry').addEventListener('click', () => {
+    hideError();
+    if (activeChannelId) {
+      const ch = channels.find(c => c.Id === activeChannelId);
+      if (ch) tuneToChannel(ch);
+    }
+  });
+
+  // Cleanup on page close
+  window.addEventListener('beforeunload', () => {
+    if (currentPlaySessionId) {
+      // Use sendBeacon for reliability during unload
+      const url = serverUrl.replace(/\/+$/, '') + '/Sessions/Playing/Stopped';
+      const body = JSON.stringify({ PlaySessionId: currentPlaySessionId });
+      try {
+        navigator.sendBeacon(url + `?ApiKey=${encodeURIComponent(apiKey)}`, new Blob([body], { type: 'application/json' }));
+      } catch (e) {
+        // Best effort
+      }
+    }
+  });
+
+  // Keyboard shortcut: Escape to close modal
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      settingsModal.classList.remove('visible');
+    }
+  });
+
+  // --- Boot ---
+  loadConfig();
+  if (serverUrl && apiKey) {
+    startApp();
+  }
+
+})();
+</script>
+</body>
+</html>

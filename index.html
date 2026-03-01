@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>THE GRID</title>
+<script src="https://cdn.jsdelivr.net/npm/hls.js@1"></script>
 <style>
 *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -431,6 +432,175 @@ body::after {
   text-shadow: 0 0 10px var(--orange);
 }
 
+/* ── Live TV Player ── */
+.player-wrap {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  height: 280px;
+  background: #000;
+  z-index: 210;
+  display: none;
+  flex-direction: column;
+}
+
+body.livetv-on .player-wrap { display: flex; }
+body.livetv-on .topbar       { top: 280px; }
+body.livetv-on .header-row   { top: calc(280px + var(--topbar-h)); }
+body.livetv-on .detail-bar   { top: calc(280px + var(--topbar-h) + var(--header-h)); }
+body.livetv-on .guide-wrap   { top: calc(280px + var(--topbar-h) + var(--header-h)); }
+body.livetv-on .guide-wrap.with-detail { top: calc(280px + var(--topbar-h) + var(--header-h) + var(--detail-h)); }
+
+.player-video-area {
+  flex: 1;
+  position: relative;
+  background: #000;
+  overflow: hidden;
+}
+
+.player-video-area video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #000;
+}
+
+.player-unmute-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 5;
+  background: rgba(0,0,0,0.3);
+}
+
+.player-unmute-label {
+  font-size: 14px;
+  font-weight: bold;
+  color: var(--cyan);
+  text-shadow: 0 0 10px var(--cyan);
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  padding: 10px 24px;
+  border: 2px solid var(--cyan);
+  background: rgba(0,0,0,0.6);
+}
+
+.player-loading-overlay {
+  position: absolute;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 12px;
+  background: rgba(0,0,0,0.75);
+  z-index: 6;
+}
+
+.player-loading-overlay.active { display: flex; }
+
+.player-spinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid #333;
+  border-top-color: var(--cyan);
+  border-radius: 50%;
+  animation: player-spin 0.7s linear infinite;
+}
+
+@keyframes player-spin { to { transform: rotate(360deg); } }
+
+.player-loading-overlay span {
+  font-size: 12px;
+  color: var(--cyan);
+  letter-spacing: 2px;
+  text-transform: uppercase;
+}
+
+.player-error-overlay {
+  position: absolute;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 12px;
+  background: rgba(0,0,0,0.85);
+  z-index: 7;
+}
+
+.player-error-overlay.active { display: flex; }
+
+.player-error-msg {
+  font-size: 12px;
+  color: var(--orange);
+  text-align: center;
+  max-width: 400px;
+}
+
+.player-retry-btn {
+  padding: 6px 16px;
+  border: 1px solid var(--orange);
+  background: transparent;
+  color: var(--orange);
+  font-family: inherit;
+  font-size: 11px;
+  letter-spacing: 1px;
+  cursor: pointer;
+  text-transform: uppercase;
+}
+
+.player-retry-btn:hover { background: rgba(255,107,44,0.15); }
+
+.player-now-bar {
+  height: 28px;
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  background: #0e0e0e;
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+  color: var(--dim);
+  letter-spacing: 1px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.player-now-bar strong {
+  color: var(--cyan);
+  margin-right: 8px;
+}
+
+/* Channel indicators for live TV */
+.ch-info.livetv-available {
+  cursor: pointer;
+}
+
+.ch-info.livetv-available:hover {
+  background: rgba(0,229,255,0.06);
+}
+
+.ch-info.livetv-active {
+  background: rgba(0,229,255,0.10);
+  border-right-color: var(--cyan);
+}
+
+.ch-play-icon {
+  margin-left: auto;
+  font-size: 10px;
+  color: var(--cyan);
+  opacity: 0.5;
+  flex-shrink: 0;
+}
+
+.ch-info.livetv-active .ch-play-icon {
+  opacity: 1;
+  text-shadow: 0 0 6px var(--cyan);
+}
+
 @media (max-width: 600px) {
   :root {
     --ch-width: 90px;
@@ -443,6 +613,13 @@ body::after {
   .detail-ch-logo { width: 32px; height: 32px; }
   .detail-ch-number { font-size: 16px; }
   .detail-poster { width: 48px; height: 72px; }
+  .player-wrap { height: 200px; }
+  body.livetv-on .topbar       { top: 200px; }
+  body.livetv-on .header-row   { top: calc(200px + var(--topbar-h)); }
+  body.livetv-on .detail-bar   { top: calc(200px + var(--topbar-h) + var(--header-h)); }
+  body.livetv-on .guide-wrap   { top: calc(200px + var(--topbar-h) + var(--header-h)); }
+  body.livetv-on .guide-wrap.with-detail { top: calc(200px + var(--topbar-h) + var(--header-h) + var(--detail-h)); }
+  .ch-play-icon { display: none; }
 }
 </style>
 </head>
@@ -453,6 +630,26 @@ body::after {
   <div class="topbar-right">
     <div class="topbar-clock" id="clock">--:--:--</div>
     <div class="topbar-date" id="date">---</div>
+  </div>
+</div>
+
+<div class="player-wrap" id="playerWrap">
+  <div class="player-video-area">
+    <video id="liveVideo" autoplay muted playsinline></video>
+    <div class="player-unmute-overlay" id="unmuteOverlay">
+      <div class="player-unmute-label">CLICK TO UNMUTE</div>
+    </div>
+    <div class="player-loading-overlay" id="playerLoading">
+      <div class="player-spinner"></div>
+      <span>Tuning...</span>
+    </div>
+    <div class="player-error-overlay" id="playerError">
+      <div class="player-error-msg" id="playerErrorMsg">Playback error.</div>
+      <button class="player-retry-btn" id="playerRetryBtn">RETRY</button>
+    </div>
+  </div>
+  <div class="player-now-bar" id="playerNowBar">
+    <strong>LIVE TV</strong> <span id="playerNowText">--</span>
   </div>
 </div>
 
@@ -488,6 +685,23 @@ body::after {
   var pauseTimer   = null;
   var PAUSE_MS     = 5000;
 
+  // ── Live TV state ──
+  var liveTVEnabled   = false;
+  var jfChannels      = [];
+  var jfChannelMap    = {};  // channel number string → Jellyfin channel object
+  var activeJFChannel = null;
+  var hlsInstance     = null;
+  var playSessionId   = null;
+  var playerMuted     = true;
+
+  var liveVideoEl     = document.getElementById('liveVideo');
+  var unmuteOverlay   = document.getElementById('unmuteOverlay');
+  var playerLoading   = document.getElementById('playerLoading');
+  var playerError     = document.getElementById('playerError');
+  var playerErrorMsg  = document.getElementById('playerErrorMsg');
+  var playerRetryBtn  = document.getElementById('playerRetryBtn');
+  var playerNowText   = document.getElementById('playerNowText');
+
   // ── Clock ──
   function updateClock() {
     var now = new Date();
@@ -512,6 +726,7 @@ body::after {
   }
 
   // ── Fetch guide data ──
+  var liveTVInitDone = false;
   function fetchGuide() {
     fetch('/api/guide.json')
       .then(function(r) {
@@ -521,6 +736,10 @@ body::after {
       .then(function(data) {
         guideData = data;
         renderAll();
+        if (!liveTVInitDone) {
+          liveTVInitDone = true;
+          initLiveTV();
+        }
       })
       .catch(function(err) {
         if (!guideData) {
@@ -617,6 +836,17 @@ body::after {
       ? '<img class="ch-logo" src="' + esc(ch.logoUrl) + '" alt="" loading="lazy" onerror="this.style.display=\'none\'">'
       : '<div class="ch-logo-placeholder"></div>';
 
+    // Live TV channel classes and play icon
+    var chInfoCls = 'ch-info';
+    var playIcon  = '';
+    if (liveTVEnabled && jfChannelMap[ch.number]) {
+      chInfoCls += ' livetv-available';
+      if (activeJFChannel && jfChannelMap[ch.number].Id === activeJFChannel.Id) {
+        chInfoCls += ' livetv-active';
+      }
+      playIcon = '<span class="ch-play-icon">\u25B6</span>';
+    }
+
     // Programs in window
     var progsHtml = '';
     var progs     = ch.programs || [];
@@ -650,12 +880,13 @@ body::after {
     }
 
     return '<div class="ch-row">' +
-      '<div class="ch-info">' +
+      '<div class="' + chInfoCls + '" data-ch-number="' + esc(ch.number) + '">' +
         logoHtml +
         '<div>' +
           '<div class="ch-number">' + esc(ch.number) + '</div>' +
           '<div class="ch-name">' + esc(ch.name) + '</div>' +
         '</div>' +
+        playIcon +
       '</div>' +
       '<div class="ch-timeline">' + progsHtml + '</div>' +
     '</div>';
@@ -737,6 +968,212 @@ body::after {
     detailBar.className = 'detail-bar active';
     scrollEl.className = 'guide-wrap with-detail';
   }
+
+  // ── Live TV module ──
+
+  function initLiveTV() {
+    fetch('/api/livetv/config')
+      .then(function(r) { return r.json(); })
+      .then(function(cfg) {
+        if (!cfg.enabled) return;
+        liveTVEnabled = true;
+        document.body.classList.add('livetv-on');
+        fetchJFChannels().then(function() {
+          // Auto-tune first matched channel
+          if (guideData && guideData.channels) {
+            for (var i = 0; i < guideData.channels.length; i++) {
+              var jfCh = jfChannelMap[guideData.channels[i].number];
+              if (jfCh) {
+                tuneToJFChannel(jfCh);
+                break;
+              }
+            }
+          }
+          renderAll();
+        });
+      })
+      .catch(function() { /* live TV not available */ });
+  }
+
+  function fetchJFChannels() {
+    return fetch('/api/livetv/channels')
+      .then(function(r) {
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return r.json();
+      })
+      .then(function(data) {
+        jfChannels = (data && data.Items) || [];
+        buildChannelMap();
+      });
+  }
+
+  function buildChannelMap() {
+    jfChannelMap = {};
+    for (var i = 0; i < jfChannels.length; i++) {
+      var ch = jfChannels[i];
+      if (ch.ChannelNumber) {
+        jfChannelMap[ch.ChannelNumber] = ch;
+      }
+    }
+  }
+
+  function tuneToJFChannel(jfCh) {
+    // Show loading, hide error
+    playerLoading.classList.add('active');
+    playerError.classList.remove('active');
+
+    // Stop previous
+    stopJFStream();
+
+    activeJFChannel = jfCh;
+
+    // Update now-bar
+    var progName = (jfCh.CurrentProgram && jfCh.CurrentProgram.Name) ? jfCh.CurrentProgram.Name : '';
+    playerNowText.textContent = (jfCh.Name || 'Ch ' + jfCh.ChannelNumber) + (progName ? ' \u2014 ' + progName : '');
+
+    // Re-render grid to update active highlights
+    if (guideData) renderAll();
+
+    // Server-side three-step handshake: returns ready-to-play HLS URL
+    fetch('/api/livetv/tune?id=' + encodeURIComponent(jfCh.Id))
+      .then(function(r) {
+        if (!r.ok) return r.text().then(function(t) { throw new Error(t || 'HTTP ' + r.status); });
+        return r.json();
+      })
+      .then(function(result) {
+        playSessionId = result.playSessionId || null;
+        startHLSPlayback(result.url);
+      })
+      .catch(function(err) {
+        playerLoading.classList.remove('active');
+        playerErrorMsg.textContent = err.message || 'Failed to tune.';
+        playerError.classList.add('active');
+      });
+  }
+
+  function stopJFStream() {
+    if (hlsInstance) {
+      hlsInstance.destroy();
+      hlsInstance = null;
+    }
+    liveVideoEl.pause();
+    liveVideoEl.removeAttribute('src');
+
+    if (playSessionId) {
+      try {
+        fetch('/api/livetv/stop', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ PlaySessionId: playSessionId })
+        });
+      } catch(e) { /* best effort */ }
+      playSessionId = null;
+    }
+  }
+
+  function startHLSPlayback(url) {
+    var video = liveVideoEl;
+    var hlsRetries = 0;
+    var MAX_HLS_RETRIES = 3;
+
+    // HLS.js first (works best cross-browser); native HLS only for Safari fallback
+    if (typeof Hls !== 'undefined' && Hls.isSupported()) {
+      hlsInstance = new Hls({
+        enableWorker: true,
+        lowLatencyMode: false,
+        maxBufferLength: 30,
+        maxMaxBufferLength: 60,
+        liveSyncDurationCount: 1,
+        liveMaxLatencyDurationCount: 15,
+        manifestLoadingMaxRetry: 6,
+        manifestLoadingRetryDelay: 2000,
+        levelLoadingMaxRetry: 6,
+        levelLoadingRetryDelay: 2000,
+        fragLoadingMaxRetry: 6,
+        fragLoadingRetryDelay: 2000
+      });
+
+      hlsInstance.loadSource(url);
+      hlsInstance.attachMedia(video);
+
+      hlsInstance.on(Hls.Events.MANIFEST_PARSED, function() {
+        playerLoading.classList.remove('active');
+        video.play().catch(function() {});
+      });
+
+      hlsInstance.on(Hls.Events.ERROR, function(event, data) {
+        if (data.fatal) {
+          hlsRetries++;
+          if (data.type === Hls.ErrorTypes.NETWORK_ERROR && hlsRetries <= MAX_HLS_RETRIES) {
+            console.log('HLS network error, retrying (' + hlsRetries + '/' + MAX_HLS_RETRIES + ')...');
+            hlsInstance.startLoad();
+          } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR && hlsRetries <= MAX_HLS_RETRIES) {
+            console.log('HLS media error, recovering (' + hlsRetries + '/' + MAX_HLS_RETRIES + ')...');
+            hlsInstance.recoverMediaError();
+          } else {
+            playerErrorMsg.textContent = 'Playback error: ' + (data.details || data.type || 'Unknown');
+            playerError.classList.add('active');
+            playerLoading.classList.remove('active');
+            hlsInstance.destroy();
+            hlsInstance = null;
+          }
+        }
+      });
+    } else if (video.canPlayType && video.canPlayType('application/vnd.apple.mpegurl') !== '') {
+      // Safari native HLS fallback
+      video.src = url;
+      video.addEventListener('canplay', function onCanPlay() {
+        playerLoading.classList.remove('active');
+        video.removeEventListener('canplay', onCanPlay);
+      });
+      video.addEventListener('error', function onErr() {
+        playerErrorMsg.textContent = 'Playback error.';
+        playerError.classList.add('active');
+        playerLoading.classList.remove('active');
+        video.removeEventListener('error', onErr);
+      });
+      video.play().catch(function() {});
+    } else {
+      playerErrorMsg.textContent = 'Browser does not support HLS playback.';
+      playerError.classList.add('active');
+      playerLoading.classList.remove('active');
+    }
+  }
+
+  // Event delegation: clicking a live-capable channel in the grid
+  innerEl.addEventListener('click', function(e) {
+    var chInfo = e.target.closest('.livetv-available');
+    if (!chInfo) return;
+    var chNum = chInfo.getAttribute('data-ch-number');
+    if (chNum && jfChannelMap[chNum]) {
+      pauseAuto();
+      tuneToJFChannel(jfChannelMap[chNum]);
+    }
+  });
+
+  // Unmute overlay
+  unmuteOverlay.addEventListener('click', function() {
+    liveVideoEl.muted = false;
+    playerMuted = false;
+    unmuteOverlay.style.display = 'none';
+  });
+
+  // Retry button
+  playerRetryBtn.addEventListener('click', function() {
+    playerError.classList.remove('active');
+    if (activeJFChannel) {
+      tuneToJFChannel(activeJFChannel);
+    }
+  });
+
+  // Cleanup on page close
+  window.addEventListener('beforeunload', function() {
+    if (playSessionId) {
+      try {
+        navigator.sendBeacon('/api/livetv/stop', new Blob([JSON.stringify({ PlaySessionId: playSessionId })], { type: 'application/json' }));
+      } catch(e) { /* best effort */ }
+    }
+  });
 
   // ── Auto-scroll via translateY (avoids browser scrollTop ceiling) ──
   function applyScroll() {
