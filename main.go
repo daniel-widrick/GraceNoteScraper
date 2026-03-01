@@ -13,6 +13,7 @@ import (
 	"log"
 	"net/http"
 	neturl "net/url"
+	"regexp"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -544,6 +545,8 @@ func handleImage(w http.ResponseWriter, r *http.Request) {
 
 // ---------- Jellyfin Live TV ----------
 
+var validJellyfinID = regexp.MustCompile(`^[0-9a-fA-F-]+$`)
+
 func handleLiveTVConfig(jellyfinURL, jellyfinAPIKey string) http.HandlerFunc {
 	enabled := jellyfinURL != "" && jellyfinAPIKey != ""
 	body := []byte(`{"enabled":false}`)
@@ -643,6 +646,10 @@ func handleLiveTVTune(jellyfinURL, jellyfinAPIKey string) http.HandlerFunc {
 		channelId := r.URL.Query().Get("id")
 		if channelId == "" {
 			http.Error(w, "missing id parameter", http.StatusBadRequest)
+			return
+		}
+		if !validJellyfinID.MatchString(channelId) {
+			http.Error(w, "invalid id parameter", http.StatusBadRequest)
 			return
 		}
 
@@ -777,7 +784,7 @@ func filterGuideChannels(g *guide.TVGuide, allowed map[string]bool) *guide.TVGui
 	var channels []guide.Channel
 	for _, ch := range g.Channels {
 		number := ""
-		if len(ch.DisplayNames) >= 2 {
+		if len(ch.DisplayNames) >= 3 {
 			number = ch.DisplayNames[1].Name
 		}
 		if allowed[number] {
@@ -828,8 +835,7 @@ func main() {
 		cf, err := fetchJellyfinChannelNumbers(jellyfinURL, jellyfinAPIKey)
 		if err != nil {
 			log.Printf("Warning: could not fetch Jellyfin channels for filter: %v", err)
-			log.Println("Channel filter disabled for this run")
-			channelFilterEnabled = false
+			log.Println("Channel filter will be retried on next scheduled scrape")
 		} else {
 			channelFilter = cf
 			log.Printf("Channel filter enabled: %d Jellyfin channels", len(channelFilter))
