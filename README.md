@@ -108,6 +108,10 @@ Scrapes once, writes `xmlguide.xmltv` to the working directory, and exits. Usefu
 | `GET /api/guide.json` | Guide data as JSON |
 | `GET /` | The Grid — built-in web UI |
 | `GET /img?url=...` | Image proxy with local cache |
+| `GET /api/livetv/config` | Returns `{"enabled":true/false}` — whether Jellyfin live TV is configured |
+| `GET /api/livetv/channels` | Proxies Jellyfin channel list (requires `JELLYFIN_URL` and `JELLYFIN_API_KEY`) |
+| `GET /api/livetv/tune?id=<channelId>` | Starts a live stream for the given channel and returns an HLS URL |
+| `POST /api/livetv/stop` | Forwards a playback-stop notification to Jellyfin to end a live stream |
 
 ## The Grid
 

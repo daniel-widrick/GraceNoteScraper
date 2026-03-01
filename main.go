@@ -727,7 +727,7 @@ func handleLiveTVStop(jellyfinURL, jellyfinAPIKey string) http.HandlerFunc {
 		url := fmt.Sprintf("%s/Sessions/Playing/Stopped?api_key=%s", jellyfinURL, jellyfinAPIKey)
 		req, err := http.NewRequest("POST", url, strings.NewReader(string(body)))
 		if err != nil {
-			http.Error(w, "failed", http.StatusInternalServerError)
+			http.Error(w, "failed to build request", http.StatusInternalServerError)
 			return
 		}
 		req.Header.Set("Content-Type", "application/json")
