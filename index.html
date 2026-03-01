@@ -735,6 +735,7 @@ body.livetv-on .detail-bar { display: none !important; }
   var jfChannels      = [];
   var jfChannelMap    = {};  // channel number string → Jellyfin channel object
   var activeJFChannel = null;
+  var tuneAbortController = null;
   var hlsInstance     = null;
   var playSessionId   = null;
   var playerMuted     = true;
@@ -1073,6 +1074,13 @@ body.livetv-on .detail-bar { display: none !important; }
     playerLoading.classList.add('active');
     playerError.classList.remove('active');
 
+    // Abort any in-flight tune request before starting a new one
+    if (tuneAbortController) {
+      tuneAbortController.abort();
+    }
+    tuneAbortController = new AbortController();
+    var signal = tuneAbortController.signal;
+
     // Stop previous
     stopJFStream();
 
@@ -1086,7 +1094,7 @@ body.livetv-on .detail-bar { display: none !important; }
     if (guideData) renderAll();
 
     // Server-side three-step handshake: returns ready-to-play HLS URL
-    fetch('/api/livetv/tune?id=' + encodeURIComponent(jfCh.Id))
+    fetch('/api/livetv/tune?id=' + encodeURIComponent(jfCh.Id), { signal: signal })
       .then(function(r) {
         if (!r.ok) return r.text().then(function(t) { throw new Error(t || 'HTTP ' + r.status); });
         return r.json();
@@ -1096,6 +1104,7 @@ body.livetv-on .detail-bar { display: none !important; }
         startHLSPlayback(result.url);
       })
       .catch(function(err) {
+        if (err.name === 'AbortError') return; // superseded by a newer tune request
         playerLoading.classList.remove('active');
         playerErrorMsg.textContent = err.message || 'Failed to tune.';
         playerError.classList.add('active');
