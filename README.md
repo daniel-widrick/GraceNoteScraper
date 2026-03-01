@@ -10,6 +10,8 @@ Generate XMLTV guide data from GraceNote/TMS listings for use with Jellyfin, Ple
 - Runs as a long-lived server with automatic 24-hour refresh, or as a one-shot scrape for cron jobs
 - Guide data cached on disk — fast restarts without re-scraping
 - Automatic XMLTV file rotation with 7-day retention
+- Optional Jellyfin Live TV integration with in-browser streaming
+- Optional channel filter to limit guide output to Jellyfin-available channels
 - Bonus: built-in retro TV guide web UI ("The Grid")
 
 ## Jellyfin / Plex Setup
@@ -94,6 +96,9 @@ Scrapes once, writes `xmlguide.xmltv` to the working directory, and exits. Usefu
 | `TMDB_TOKEN` | TMDB read access token (optional) | — |
 | `BASE_URL` | Server base URL — rewrites XMLTV image URLs to use the built-in proxy cache (e.g. `http://192.168.1.50:8080`) | — |
 | `PORT` | HTTP server port | `8080` |
+| `JELLYFIN_URL` | Jellyfin server URL (optional — enables live TV integration) | — |
+| `JELLYFIN_API_KEY` | Jellyfin API key | — |
+| `JELLYFIN_CHANNEL_FILTER` | Set to any non-empty value to filter guide to only Jellyfin-available channels. Requires `JELLYFIN_URL` and `JELLYFIN_API_KEY`. | — |
 
 ## HTTP Endpoints
 
@@ -108,7 +113,7 @@ Scrapes once, writes `xmlguide.xmltv` to the working directory, and exits. Usefu
 
 The server includes a built-in retro-styled TV guide web UI at the root URL. It auto-scrolls through your channel lineup and shows program details, posters, and metadata. Handy for a quick glance at what's on without opening your DVR app.
 
-![The Grid](demo.gif)
+![The Grid](https://gist.githubusercontent.com/daniel-widrick/2c52c4d023ffe75d163b4eff58263c77/raw/demo.gif)
 
 ## Project Structure
 

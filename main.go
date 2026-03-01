@@ -181,7 +181,7 @@ func xmltvTimeToISO(xmltvTime string) string {
 
 // runScrape performs the full scrape cycle and returns the populated TVGuide.
 // It also writes xmlguide.xmltv atomically.
-func runScrape(tmdbClient *tmdb.Client, logoClient *tvlogo.Client, lang, country, baseURL string) (*guide.TVGuide, error) {
+func runScrape(tmdbClient *tmdb.Client, logoClient *tvlogo.Client, lang, country, baseURL string, channelFilter map[string]bool) (*guide.TVGuide, error) {
 	client := web.NewClient()
 
 	now := time.Now().UTC()
@@ -258,7 +258,13 @@ func runScrape(tmdbClient *tmdb.Client, logoClient *tvlogo.Client, lang, country
 		Programs: programs,
 	}
 
-	log.Printf("Rendering XMLTV: %d channels, %d programs", len(channels), len(programs))
+	if channelFilter != nil {
+		before := len(tvGuide.Channels)
+		tvGuide = filterGuideChannels(tvGuide, channelFilter)
+		log.Printf("Channel filter: %d → %d channels (Jellyfin has %d)", before, len(tvGuide.Channels), len(channelFilter))
+	}
+
+	log.Printf("Rendering XMLTV: %d channels, %d programs", len(tvGuide.Channels), len(tvGuide.Programs))
 
 	// Parse embedded template
 	tmpl, err := template.ParseFS(guideTmplFS, "guide.tmpl")
@@ -370,7 +376,7 @@ func rotateFiles() {
 // startScraper runs the scrape cycle on a 24-hour ticker.
 // If initialDelay > 0, the first scrape fires after that delay instead of 24h
 // (used when we skipped the startup scrape because the file was still fresh).
-func startScraper(ctx context.Context, state *GuideState, tmdbClient *tmdb.Client, logoClient *tvlogo.Client, lang, country, baseURL string, initialDelay time.Duration) {
+func startScraper(ctx context.Context, state *GuideState, tmdbClient *tmdb.Client, logoClient *tvlogo.Client, lang, country, baseURL string, initialDelay time.Duration, jellyfinURL, jellyfinAPIKey string, filterEnabled bool) {
 	if initialDelay <= 0 {
 		initialDelay = 24 * time.Hour
 	}
@@ -385,7 +391,18 @@ func startScraper(ctx context.Context, state *GuideState, tmdbClient *tmdb.Clien
 			return
 		case <-timer.C:
 			log.Println("Starting scheduled scrape cycle")
-			g, err := runScrape(tmdbClient, logoClient, lang, country, baseURL)
+
+			var channelFilter map[string]bool
+			if filterEnabled {
+				cf, err := fetchJellyfinChannelNumbers(jellyfinURL, jellyfinAPIKey)
+				if err != nil {
+					log.Printf("Warning: could not fetch Jellyfin channels for filter, proceeding unfiltered: %v", err)
+				} else {
+					channelFilter = cf
+				}
+			}
+
+			g, err := runScrape(tmdbClient, logoClient, lang, country, baseURL, channelFilter)
 			if err != nil {
 				log.Printf("Scheduled scrape failed: %v", err)
 			} else {
@@ -718,6 +735,70 @@ func handleLiveTVStop(jellyfinURL, jellyfinAPIKey string) http.HandlerFunc {
 	}
 }
 
+// ---------- Jellyfin channel filter ----------
+
+// fetchJellyfinChannelNumbers queries Jellyfin for available live TV channels
+// and returns a set of their channel number strings.
+func fetchJellyfinChannelNumbers(jellyfinURL, jellyfinAPIKey string) (map[string]bool, error) {
+	url := fmt.Sprintf("%s/LiveTv/Channels?api_key=%s&SortBy=SortName", jellyfinURL, jellyfinAPIKey)
+	client := &http.Client{Timeout: 15 * time.Second}
+	resp, err := client.Get(url)
+	if err != nil {
+		return nil, fmt.Errorf("fetching Jellyfin channels: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("Jellyfin returned %d", resp.StatusCode)
+	}
+
+	var result struct {
+		Items []struct {
+			ChannelNumber string `json:"ChannelNumber"`
+		} `json:"Items"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("decoding Jellyfin channels: %w", err)
+	}
+
+	allowed := make(map[string]bool, len(result.Items))
+	for _, item := range result.Items {
+		if item.ChannelNumber != "" {
+			allowed[item.ChannelNumber] = true
+		}
+	}
+	return allowed, nil
+}
+
+// filterGuideChannels returns a new TVGuide containing only channels whose
+// number (DisplayNames[1]) is in the allowed set, along with their programs.
+func filterGuideChannels(g *guide.TVGuide, allowed map[string]bool) *guide.TVGuide {
+	allowedIDs := make(map[string]bool)
+	var channels []guide.Channel
+	for _, ch := range g.Channels {
+		number := ""
+		if len(ch.DisplayNames) >= 2 {
+			number = ch.DisplayNames[1].Name
+		}
+		if allowed[number] {
+			channels = append(channels, ch)
+			allowedIDs[ch.ID] = true
+		}
+	}
+
+	var programs []guide.Program
+	for _, p := range g.Programs {
+		if allowedIDs[p.Channel] {
+			programs = append(programs, p)
+		}
+	}
+
+	return &guide.TVGuide{
+		Channels: channels,
+		Programs: programs,
+	}
+}
+
 // ---------- Main ----------
 
 func main() {
@@ -735,8 +816,24 @@ func main() {
 
 	jellyfinURL := strings.TrimRight(util.GetEnv("JELLYFIN_URL", ""), "/")
 	jellyfinAPIKey := util.GetEnv("JELLYFIN_API_KEY", "")
-	if jellyfinURL != "" && jellyfinAPIKey != "" {
+	jellyfinConfigured := jellyfinURL != "" && jellyfinAPIKey != ""
+	if jellyfinConfigured {
 		log.Printf("Jellyfin Live TV integration enabled (%s)", jellyfinURL)
+	}
+
+	// Channel filter: only show channels available in Jellyfin
+	channelFilterEnabled := util.GetEnv("JELLYFIN_CHANNEL_FILTER", "") != "" && jellyfinConfigured
+	var channelFilter map[string]bool
+	if channelFilterEnabled {
+		cf, err := fetchJellyfinChannelNumbers(jellyfinURL, jellyfinAPIKey)
+		if err != nil {
+			log.Printf("Warning: could not fetch Jellyfin channels for filter: %v", err)
+			log.Println("Channel filter disabled for this run")
+			channelFilterEnabled = false
+		} else {
+			channelFilter = cf
+			log.Printf("Channel filter enabled: %d Jellyfin channels", len(channelFilter))
+		}
 	}
 
 	tmdbToken := util.GetEnv("TMDB_TOKEN", "")
@@ -759,7 +856,7 @@ func main() {
 	// --guide-only: always scrape, write output, exit
 	if *guideOnly {
 		log.Println("Starting scrape (guide-only mode)...")
-		if _, err := runScrape(tmdbClient, logoClient, lang, country, baseURL); err != nil {
+		if _, err := runScrape(tmdbClient, logoClient, lang, country, baseURL, channelFilter); err != nil {
 			log.Fatalf("Scrape failed: %v", err)
 		}
 		log.Println("--guide-only: done")
@@ -775,6 +872,11 @@ func main() {
 	if cacheOK && xmltvMissing == nil {
 		log.Printf("Loaded guide from cache (%s old), skipping scrape", age.Round(time.Second))
 		g = cached
+		if channelFilter != nil {
+			before := len(g.Channels)
+			g = filterGuideChannels(g, channelFilter)
+			log.Printf("Channel filter: %d → %d channels (cached guide)", before, len(g.Channels))
+		}
 		// Schedule next scrape for when the cache turns 24h old
 		nextScrapeIn = 24*time.Hour - age
 		if nextScrapeIn < time.Hour {
@@ -786,7 +888,7 @@ func main() {
 		}
 		log.Println("Starting initial scrape...")
 		var err error
-		g, err = runScrape(tmdbClient, logoClient, lang, country, baseURL)
+		g, err = runScrape(tmdbClient, logoClient, lang, country, baseURL, channelFilter)
 		if err != nil {
 			log.Fatalf("Initial scrape failed: %v", err)
 		}
@@ -803,7 +905,7 @@ func main() {
 
 	// Start background scraper
 	log.Printf("Next scrape in %s", nextScrapeIn.Round(time.Minute))
-	go startScraper(ctx, state, tmdbClient, logoClient, lang, country, baseURL, nextScrapeIn)
+	go startScraper(ctx, state, tmdbClient, logoClient, lang, country, baseURL, nextScrapeIn, jellyfinURL, jellyfinAPIKey, channelFilterEnabled)
 
 	// HTTP server
 	mux := http.NewServeMux()
