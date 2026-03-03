@@ -193,9 +193,12 @@ func runScrape(tmdbClient *tmdb.Client, logoClient *tvlogo.Client, lang, country
 	eventMap := make(map[string]bool)
 	var programs []guide.Program
 
+	totalSlots := int(endTime.Sub(midnight) / (6 * time.Hour))
+	slot := 0
 	for t := midnight; t.Before(endTime); t = t.Add(6 * time.Hour) {
+		slot++
 		ts := t.Unix()
-		log.Printf("Fetching grid for time=%d (%s)", ts, t.Format(time.RFC3339))
+		log.Printf("Fetching grid %d/%d for time=%d (%s)", slot, totalSlots, ts, t.Format(time.RFC3339))
 
 		grid, err := client.GetDataByTime(ts)
 		if err != nil {
@@ -232,6 +235,7 @@ func runScrape(tmdbClient *tmdb.Client, logoClient *tvlogo.Client, lang, country
 
 	enrichChannelIcons(logoClient, channels)
 	enrichProgramThumbnails(tmdbClient, programs)
+	fixDeadImageURLs(programs)
 
 	// Rewrite image URLs to go through the local proxy
 	if baseURL != "" {
@@ -462,6 +466,9 @@ func imageURLAllowed(rawURL string) bool {
 	}
 	host := strings.ToLower(u.Hostname())
 	if host == "image.tmdb.org" {
+		return true
+	}
+	if host == "tmsimg.com" {
 		return true
 	}
 	if host == "raw.githubusercontent.com" && strings.HasPrefix(u.Path, "/tv-logo/tv-logos/") {
@@ -1052,6 +1059,27 @@ func enrichProgramThumbnails(client *tmdb.Client, programs []guide.Program) {
 	}
 
 	log.Printf("TMDB: enriched %d/%d programs", enriched, len(programs))
+}
+
+// fixDeadImageURLs rewrites program image URLs pointing to the defunct
+// zap2it.tmsimg.com host to use tmsimg.com directly, which still serves images.
+func fixDeadImageURLs(programs []guide.Program) {
+	fixed := 0
+	for i := range programs {
+		if programs[i].IconSrc != "" && strings.Contains(programs[i].IconSrc, "zap2it.tmsimg.com") {
+			programs[i].IconSrc = strings.Replace(programs[i].IconSrc, "zap2it.tmsimg.com", "tmsimg.com", 1)
+			fixed++
+		}
+		for j := range programs[i].Images {
+			if strings.Contains(programs[i].Images[j].URL, "zap2it.tmsimg.com") {
+				programs[i].Images[j].URL = strings.Replace(programs[i].Images[j].URL, "zap2it.tmsimg.com", "tmsimg.com", 1)
+				fixed++
+			}
+		}
+	}
+	if fixed > 0 {
+		log.Printf("Fixed %d zap2it image URLs to use tmsimg.com", fixed)
+	}
 }
 
 // resolves channel logos from the tv-logo/tv-logos repo,
