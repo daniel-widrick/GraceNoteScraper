@@ -1073,6 +1073,7 @@ func fixDeadImageURLs(programs []guide.Program) {
 		for j := range programs[i].Images {
 			if strings.Contains(programs[i].Images[j].URL, "zap2it.tmsimg.com") {
 				programs[i].Images[j].URL = strings.Replace(programs[i].Images[j].URL, "zap2it.tmsimg.com", "tmsimg.com", 1)
+				fixed++
 			}
 		}
 	}
