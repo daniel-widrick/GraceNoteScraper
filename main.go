@@ -193,9 +193,12 @@ func runScrape(tmdbClient *tmdb.Client, logoClient *tvlogo.Client, lang, country
 	eventMap := make(map[string]bool)
 	var programs []guide.Program
 
+	totalSlots := int(endTime.Sub(midnight) / (6 * time.Hour))
+	slot := 0
 	for t := midnight; t.Before(endTime); t = t.Add(6 * time.Hour) {
+		slot++
 		ts := t.Unix()
-		log.Printf("Fetching grid for time=%d (%s)", ts, t.Format(time.RFC3339))
+		log.Printf("Fetching grid %d/%d for time=%d (%s)", slot, totalSlots, ts, t.Format(time.RFC3339))
 
 		grid, err := client.GetDataByTime(ts)
 		if err != nil {
@@ -232,6 +235,7 @@ func runScrape(tmdbClient *tmdb.Client, logoClient *tvlogo.Client, lang, country
 
 	enrichChannelIcons(logoClient, channels)
 	enrichProgramThumbnails(tmdbClient, programs)
+	stripDeadImageURLs(programs)
 
 	// Rewrite image URLs to go through the local proxy
 	if baseURL != "" {
@@ -1052,6 +1056,30 @@ func enrichProgramThumbnails(client *tmdb.Client, programs []guide.Program) {
 	}
 
 	log.Printf("TMDB: enriched %d/%d programs", enriched, len(programs))
+}
+
+// stripDeadImageURLs removes program image URLs pointing to defunct hosts
+// (e.g. zap2it.tmsimg.com) that are no longer reachable. Programs without
+// an enriched image will simply have no icon in the output.
+// TODO: find an alternative image source for programs that TMDB can't match.
+func stripDeadImageURLs(programs []guide.Program) {
+	stripped := 0
+	for i := range programs {
+		if programs[i].IconSrc != "" && strings.Contains(programs[i].IconSrc, "zap2it.tmsimg.com") {
+			programs[i].IconSrc = ""
+			stripped++
+		}
+		clean := programs[i].Images[:0]
+		for _, img := range programs[i].Images {
+			if !strings.Contains(img.URL, "zap2it.tmsimg.com") {
+				clean = append(clean, img)
+			}
+		}
+		programs[i].Images = clean
+	}
+	if stripped > 0 {
+		log.Printf("Stripped %d dead zap2it image URLs from programs", stripped)
+	}
 }
 
 // resolves channel logos from the tv-logo/tv-logos repo,
