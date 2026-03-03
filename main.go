@@ -235,7 +235,7 @@ func runScrape(tmdbClient *tmdb.Client, logoClient *tvlogo.Client, lang, country
 
 	enrichChannelIcons(logoClient, channels)
 	enrichProgramThumbnails(tmdbClient, programs)
-	stripDeadImageURLs(programs)
+	fixDeadImageURLs(programs)
 
 	// Rewrite image URLs to go through the local proxy
 	if baseURL != "" {
@@ -466,6 +466,9 @@ func imageURLAllowed(rawURL string) bool {
 	}
 	host := strings.ToLower(u.Hostname())
 	if host == "image.tmdb.org" {
+		return true
+	}
+	if host == "tmsimg.com" {
 		return true
 	}
 	if host == "raw.githubusercontent.com" && strings.HasPrefix(u.Path, "/tv-logo/tv-logos/") {
@@ -1058,27 +1061,23 @@ func enrichProgramThumbnails(client *tmdb.Client, programs []guide.Program) {
 	log.Printf("TMDB: enriched %d/%d programs", enriched, len(programs))
 }
 
-// stripDeadImageURLs removes program image URLs pointing to defunct hosts
-// (e.g. zap2it.tmsimg.com) that are no longer reachable. Programs without
-// an enriched image will simply have no icon in the output.
-// TODO: find an alternative image source for programs that TMDB can't match.
-func stripDeadImageURLs(programs []guide.Program) {
-	stripped := 0
+// fixDeadImageURLs rewrites program image URLs pointing to the defunct
+// zap2it.tmsimg.com host to use tmsimg.com directly, which still serves images.
+func fixDeadImageURLs(programs []guide.Program) {
+	fixed := 0
 	for i := range programs {
 		if programs[i].IconSrc != "" && strings.Contains(programs[i].IconSrc, "zap2it.tmsimg.com") {
-			programs[i].IconSrc = ""
-			stripped++
+			programs[i].IconSrc = strings.Replace(programs[i].IconSrc, "zap2it.tmsimg.com", "tmsimg.com", 1)
+			fixed++
 		}
-		clean := programs[i].Images[:0]
-		for _, img := range programs[i].Images {
-			if !strings.Contains(img.URL, "zap2it.tmsimg.com") {
-				clean = append(clean, img)
+		for j := range programs[i].Images {
+			if strings.Contains(programs[i].Images[j].URL, "zap2it.tmsimg.com") {
+				programs[i].Images[j].URL = strings.Replace(programs[i].Images[j].URL, "zap2it.tmsimg.com", "tmsimg.com", 1)
 			}
 		}
-		programs[i].Images = clean
 	}
-	if stripped > 0 {
-		log.Printf("Stripped %d dead zap2it image URLs from programs", stripped)
+	if fixed > 0 {
+		log.Printf("Fixed %d zap2it image URLs to use tmsimg.com", fixed)
 	}
 }
 
