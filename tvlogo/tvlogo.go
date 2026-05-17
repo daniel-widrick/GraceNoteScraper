@@ -28,37 +28,68 @@ var countryMap = map[string]countryInfo{
 // when algorithmic normalization wouldn't produce the right slug.
 var affiliateAliases = map[string]string{
 	"home box office":                              "hbo",
-	"national broadcasting company":                "nbc",
-	"american broadcasting company":                "abc",
-	"cbs television network":                       "cbs",
-	"fox entertainment":                            "fox",
-	"fox broadcasting":                             "fox",
-	"fox broadcasting company":                     "fox",
-	"turner network television":                    "tnt",
+	"national broadcasting company":               "nbc",
+	"american broadcasting company":               "abc",
+	"cbs television network":                      "cbs",
+	"fox entertainment":                           "fox",
+	"fox broadcasting":                            "fox",
+	"fox broadcasting company":                    "fox",
+	"turner network television":                   "tnt",
 	"entertainment and sports programming network": "espn",
-	"cable news network":                           "cnn",
-	"the weather channel":                          "the-weather-channel",
-	"comedy central":                               "comedy-central",
-	"cartoon network":                              "cartoon-network",
-	"animal planet":                                "animal-planet",
-	"public broadcasting service":                  "pbs",
-	"cable-satellite public affairs network":       "c-span",
+	"cable news network":                          "cnn",
+	"the weather channel":                         "weather-channel",
+	"comedy central":                              "comedy-central",
+	"cartoon network":                             "cartoon-network",
+	"animal planet":                               "animal-planet",
+	"public broadcasting service":                 "pbs",
+	"cable-satellite public affairs network":      "c-span",
+	"turner classic movies":                       "tcm",
+	"american movie classics":                     "amc",
+	"freeform":                                    "freeform",
+	"fx networks":                                 "fx",
+	"investigation discovery":                     "investigation-discovery",
+	"oprah winfrey network":                       "oprah-winfrey-network",
+	"a and e":                                     "a-and-e",
+	"a&e":                                         "a-and-e",
+}
+
+// networkSlugs maps affiliate name variations to their short network slug,
+// used to generate {network}-{number}-{callsign} patterns for local affiliates.
+var networkSlugs = map[string]string{
+	"abc":                           "abc",
+	"american broadcasting company": "abc",
+	"cbs":                           "cbs",
+	"cbs television network":        "cbs",
+	"nbc":                           "nbc",
+	"national broadcasting company": "nbc",
+	"fox":                           "fox",
+	"fox broadcasting":              "fox",
+	"fox broadcasting company":      "fox",
+	"fox entertainment":             "fox",
+	"the cw":                        "cw",
+	"cw":                            "cw",
+	"pbs":                           "pbs",
+	"public broadcasting service":   "pbs",
+	"telemundo":                     "telemundo",
+	"univision":                     "univision",
+	"unimas":                        "unimas",
+	"my network tv":                 "my-network-tv",
 }
 
 // noiseWords are stripped from affiliate names during normalization.
+// Notably excludes "channel", "network", and "tv" since many repo slugs include those words.
 var noiseWords = map[string]bool{
-	"television":    true,
-	"network":       true,
-	"channel":       true,
-	"broadcasting":  true,
-	"company":       true,
-	"entertainment": true,
-	"corporation":   true,
-	"inc":           true,
+	"broadcasting": true,
+	"company":      true,
+	"corporation":  true,
+	"inc":          true,
 }
 
-// matches common HD/SD/DT suffixes on callsigns.
+// matches common HD/SD/DT suffixes on callsigns (inline, e.g. "ESPNHD").
 var hdSuffixRe = regexp.MustCompile(`(?i)(hd|sd|dt|hd2|hd3|hd4)$`)
+
+// matches dash-separated station suffixes like -TV, -DT, -HD, -LD, -DT2.
+var dashSuffixRe = regexp.MustCompile(`(?i)-(tv|dt|hd|ld|dt2|hd2|hd3)$`)
 
 // helps split compound callsigns like "ESPNHD" → "espn".
 var knownPrefixes = []string{
@@ -101,7 +132,7 @@ func (c *Client) Close() {
 
 // returns a verified logo URL for the channel, or "" if none found.
 // Results are cached by channel ID.
-func (c *Client) Resolve(channelID, callSign, affiliateName string) string {
+func (c *Client) Resolve(channelID, callSign, affiliateName, channelNo string) string {
 	if c == nil {
 		return ""
 	}
@@ -111,7 +142,7 @@ func (c *Client) Resolve(channelID, callSign, affiliateName string) string {
 		return entry.LogoURL
 	}
 
-	candidates := c.generateCandidates(callSign, affiliateName)
+	candidates := c.generateCandidates(callSign, affiliateName, channelNo)
 
 	logoURL := ""
 	for _, slug := range candidates {
@@ -127,7 +158,7 @@ func (c *Client) Resolve(channelID, callSign, affiliateName string) string {
 }
 
 // returns an ordered list of slugs to try.
-func (c *Client) generateCandidates(callSign, affiliateName string) []string {
+func (c *Client) generateCandidates(callSign, affiliateName, channelNo string) []string {
 	seen := make(map[string]bool)
 	var candidates []string
 
@@ -141,32 +172,42 @@ func (c *Client) generateCandidates(callSign, affiliateName string) []string {
 	affiliate := strings.ToLower(strings.TrimSpace(affiliateName))
 	call := strings.ToLower(strings.TrimSpace(callSign))
 
-	// Check alias table first
+	// 1. Check alias table first (handles long-form and irregular names)
 	if alias, ok := affiliateAliases[affiliate]; ok {
 		add(alias)
 	}
 
-	// Normalized affiliate name (strip noise words)
+	// 2. Full affiliate slug — no stripping; matches "action-channel", "history-channel", etc.
+	add(slugify(affiliate))
+
+	// 3. {network}-{channelNo}-{callsign} — matches local affiliate logos like "abc-7-kabc"
+	bare := bareCallSign(call)
+	if network, ok := networkSlugs[affiliate]; ok && bare != "" {
+		if channelNo != "" {
+			add(network + "-" + channelNo + "-" + bare)
+		}
+		// 4. {network}-{callsign} — matches "abc-kota", "nbc-kdlt", "fox-wjzy", etc.
+		add(network + "-" + bare)
+	}
+
+	// 5. Bare callsign alone — matches standalone entries like "wjxt", "wlny"
+	add(bare)
+
+	// 6. Affiliate without leading "the" — "The Weather Channel" → "weather-channel"
+	if strings.HasPrefix(affiliate, "the ") {
+		add(slugify(strings.TrimPrefix(affiliate, "the ")))
+	}
+
+	// 7. Normalized affiliate (strip noise words) — fallback for unusual long-form names
 	add(normalizeAffiliate(affiliate))
 
-	// Normalized callsign (strip HD/SD/DT suffixes, try known-prefix split)
-	stripped := stripCallSignSuffix(call)
-	add(stripped)
-
-	// Try known-prefix extraction for compound callsigns
+	// 8. Known-prefix extraction for compound callsigns like "ESPNHD" → "espn"
+	stripped := hdSuffixRe.ReplaceAllString(call, "")
 	for _, prefix := range knownPrefixes {
 		if strings.HasPrefix(stripped, prefix) && len(stripped) > len(prefix) {
 			add(prefix)
 			break
 		}
-	}
-
-	// Full affiliate name as slug (without stripping noise words)
-	add(slugify(affiliate))
-
-	// Raw lowered callsign (suffix-stripped only)
-	if stripped != call {
-		add(call) // also try the raw form with suffix
 	}
 
 	return candidates
@@ -184,15 +225,17 @@ func normalizeAffiliate(name string) string {
 	return slugify(strings.Join(kept, " "))
 }
 
-// removes HD/SD/DT suffixes from callsigns.
-func stripCallSignSuffix(call string) string {
-	return hdSuffixRe.ReplaceAllString(call, "")
+// returns the bare callsign with dash-separated and inline HD/SD/DT suffixes removed.
+func bareCallSign(call string) string {
+	s := dashSuffixRe.ReplaceAllString(call, "")
+	s = hdSuffixRe.ReplaceAllString(s, "")
+	return strings.Trim(s, "- ")
 }
 
-// converts a name to a URL-safe slug: lowercase, spaces/punctuation to hyphens.
+// converts a name to a URL-safe slug: lowercase, & → "and", spaces/punctuation to hyphens.
 func slugify(s string) string {
 	s = strings.ToLower(s)
-	// Replace non-alphanumeric with hyphens
+	s = strings.ReplaceAll(s, "&", " and ")
 	var b strings.Builder
 	prev := false
 	for _, r := range s {

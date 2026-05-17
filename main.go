@@ -1093,7 +1093,7 @@ func enrichChannelIcons(client *tvlogo.Client, channels []guide.Channel) {
 
 	enriched := 0
 	for i := range channels {
-		logoURL := client.Resolve(channels[i].ID, channels[i].CallSign, channels[i].Affiliate)
+		logoURL := client.Resolve(channels[i].ID, channels[i].CallSign, channels[i].Affiliate, channels[i].ChannelNo)
 		if logoURL != "" {
 			channels[i].IconURL = logoURL
 			enriched++
