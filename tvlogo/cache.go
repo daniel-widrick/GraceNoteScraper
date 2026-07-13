@@ -11,8 +11,9 @@ import (
 const cacheTTL = 30 * 24 * time.Hour
 
 type CacheEntry struct {
-	LogoURL   string `json:"logo_url"`
-	FetchedAt int64  `json:"fetched_at"`
+	LogoURL        string `json:"logo_url"`
+	FetchedAt      int64  `json:"fetched_at"`
+	MatcherVersion int    `json:"matcher_version,omitempty"`
 }
 
 type Cache struct {
@@ -51,6 +52,12 @@ func (c *Cache) Get(key string) (CacheEntry, bool) {
 		delete(c.entries, key)
 		return CacheEntry{}, false
 	}
+	// Retry failures from older matcher versions so logic improvements take effect
+	// without a manual cache wipe. Successful matches are preserved across versions.
+	if entry.MatcherVersion < matcherVersion && entry.LogoURL == "" {
+		delete(c.entries, key)
+		return CacheEntry{}, false
+	}
 	return entry, true
 }
 
@@ -59,6 +66,7 @@ func (c *Cache) Set(key string, entry CacheEntry) {
 	defer c.mu.Unlock()
 
 	entry.FetchedAt = time.Now().Unix()
+	entry.MatcherVersion = matcherVersion
 	c.entries[key] = entry
 }
 

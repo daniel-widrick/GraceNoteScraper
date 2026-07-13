@@ -20,6 +20,7 @@ type Channel struct {
 	IconURL      string
 	CallSign     string // internal, not in template
 	Affiliate    string // internal, not in template
+	ChannelNo    string // internal, not in template
 }
 
 type DisplayName struct {
@@ -121,6 +122,7 @@ func ConvertChannel(ch web.JSONChannel) Channel {
 		IconURL:   iconURL,
 		CallSign:  ch.CallSign,
 		Affiliate: ch.AffiliateName,
+		ChannelNo: ch.ChannelNo,
 	}
 }
 

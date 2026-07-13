@@ -28,37 +28,405 @@ var countryMap = map[string]countryInfo{
 // when algorithmic normalization wouldn't produce the right slug.
 var affiliateAliases = map[string]string{
 	"home box office":                              "hbo",
-	"national broadcasting company":                "nbc",
-	"american broadcasting company":                "abc",
-	"cbs television network":                       "cbs",
-	"fox entertainment":                            "fox",
-	"fox broadcasting":                             "fox",
-	"fox broadcasting company":                     "fox",
-	"turner network television":                    "tnt",
+	"national broadcasting company":               "nbc",
+	"american broadcasting company":               "abc",
+	"cbs television network":                      "cbs",
+	"fox entertainment":                           "fox",
+	"fox broadcasting":                            "fox",
+	"fox broadcasting company":                    "fox",
+	"turner network television":                   "tnt",
 	"entertainment and sports programming network": "espn",
-	"cable news network":                           "cnn",
-	"the weather channel":                          "the-weather-channel",
-	"comedy central":                               "comedy-central",
-	"cartoon network":                              "cartoon-network",
-	"animal planet":                                "animal-planet",
-	"public broadcasting service":                  "pbs",
-	"cable-satellite public affairs network":       "c-span",
+	"cable news network":                          "cnn",
+	"the weather channel":                         "weather-channel",
+	"comedy central":                              "comedy-central",
+	"cartoon network":                             "cartoon-network",
+	"animal planet":                               "animal-planet",
+	"public broadcasting service":                 "pbs",
+	"cable-satellite public affairs network":      "c-span",
+	"turner classic movies":                       "tcm",
+	"american movie classics":                     "amc",
+	"freeform":                                    "freeform",
+	"fx networks":                                 "fx",
+	"investigation discovery":                     "investigation-discovery",
+	"oprah winfrey network":                       "oprah-winfrey-network",
+	"a and e":                                     "a-and-e",
+	"a&e":                                         "a-and-e",
+}
+
+// networkSlugs maps affiliate name variations to their short network slug,
+// used to generate {network}-{number}-{callsign} patterns for local affiliates.
+var networkSlugs = map[string]string{
+	"abc":                           "abc",
+	"american broadcasting company": "abc",
+	"cbs":                           "cbs",
+	"cbs television network":        "cbs",
+	"nbc":                           "nbc",
+	"national broadcasting company": "nbc",
+	"fox":                           "fox",
+	"fox broadcasting":              "fox",
+	"fox broadcasting company":      "fox",
+	"fox entertainment":             "fox",
+	"the cw":                        "cw",
+	"cw":                            "cw",
+	"pbs":                           "pbs",
+	"public broadcasting service":   "pbs",
+	"telemundo":                     "telemundo",
+	"univision":                     "univision",
+	"unimas":                        "unimas",
+	"my network tv":                 "my-network-tv",
 }
 
 // noiseWords are stripped from affiliate names during normalization.
+// Notably excludes "channel", "network", and "tv" since many repo slugs include those words.
 var noiseWords = map[string]bool{
-	"television":    true,
-	"network":       true,
-	"channel":       true,
-	"broadcasting":  true,
-	"company":       true,
-	"entertainment": true,
-	"corporation":   true,
-	"inc":           true,
+	"broadcasting": true,
+	"company":      true,
+	"corporation":  true,
+	"inc":          true,
 }
 
-// matches common HD/SD/DT suffixes on callsigns.
-var hdSuffixRe = regexp.MustCompile(`(?i)(hd|sd|dt|hd2|hd3|hd4)$`)
+// matches common HD/SD/DT/Plus suffixes on callsigns (inline, e.g. "MAXHDP", "TOONP").
+var hdSuffixRe = regexp.MustCompile(`(?i)(hdp|hp|hd[234]|hd|sd|dt2|dt|p)$`)
+
+// matches dash-separated station suffixes like -TV, -DT, -HD, -LD, -DT2.
+var dashSuffixRe = regexp.MustCompile(`(?i)-(tv|dt|hd|ld|dt2|hd2|hd3)$`)
+
+// Bump when matching logic changes. Cache entries below this version with
+// empty results are re-checked on next access (matched entries are preserved).
+const matcherVersion = 2
+
+// callsignSlugs maps cryptic GraceNote callsign abbreviations to tv-logo repo slugs.
+// Many providers send these short callsigns with NO affiliate name, so direct
+// slugification fails (e.g., "HISTORY" never matches "history-channel-us.png").
+// Keys must be lowercase. Lookup is tried against both the raw and suffix-stripped
+// callsign, so entries here should be the suffix-stripped form when applicable.
+var callsignSlugs = map[string]string{
+	// A&E / History / Discovery family
+	"aetv":    "a-and-e",
+	"ahc":     "american-heroes-channel",
+	"apl":     "animal-planet",
+	"history": "history-channel",
+	"hstry":   "history-channel",
+	"histe":   "history-en-espanol",
+	"dsc":     "discovery-channel",
+	"dsce":    "discovery-en-espanol",
+	"dfam":    "discovery-family",
+	"dfc":     "discovery-family",
+	"dlc":     "discovery-life",
+	"dest":    "destination-america",
+	"science": "discovery-science",
+	"sci":     "discovery-science",
+	"id":      "investigation-discovery",
+	"idtv":    "investigation-discovery",
+	// Disney family
+	"disn": "disney-channel",
+	"dsn":  "disney-channel",
+	"dxd":  "disney-xd",
+	"djch": "disney-jr",
+	"djr":  "disney-jr",
+	// BBC / News
+	"bbca":   "bbc-america",
+	"bbcaus": "bbc-america",
+	"cnbc":   "cnbc",
+	"fnc":    "fox-news",
+	"fbn":    "fox-business",
+	"hln":    "hln",
+	"msnow":  "ms-now",
+	"msnbc":  "msnbc-alt",
+	"newsmx": "newsmax-tv",
+	"nwsntn": "news-nation",
+	"newsntn": "news-nation",
+	"nwsnt":  "news-nation",
+	// BET / Music
+	"bet":    "bet",
+	"bher":   "bet-her",
+	"mtv":    "mtv",
+	"mtv2":   "mtv-2",
+	"vh1":    "vh1",
+	"cmtv":   "cmt",
+	"cmtmus": "cmt-music",
+	"revolt": "revolt",
+	"rvlt":   "revolt",
+	"fuse":   "fuse",
+	// Sports networks
+	"bigten":  "big-ten-network",
+	"big10":   "big-ten-network",
+	"btn":     "btn",
+	"sec":     "sec-network",
+	"secn":    "sec-network",
+	"secnp":   "sec-network",
+	"acc":     "espn-accn",
+	"accn":    "espn-accn",
+	"cbssn":   "cbs-sports-network",
+	"fs1":     "fox-sports-1",
+	"fs2":     "fox-sports-2",
+	"fxdep":   "fox-sports-deportes",
+	"golf":    "nbc-golf",
+	"nbcgolf": "nbc-golf",
+	"gsn":     "game-show-network",
+	"marq":    "marquee-sports-network",
+	"mlbn":    "mlb-network",
+	"mlb":     "mlb-network",
+	"mlbsz":   "mlb-network-strike-zone",
+	"nbatv":   "nba-tv",
+	"nba":     "nba-tv",
+	"nhlnet":  "nhl-network",
+	"nhl":     "nhl-network",
+	"nflnet":  "nfl-network",
+	"nfl":     "nfl-network",
+	"nflnrz":  "nfl-red-zone",
+	"redzone": "nfl-red-zone",
+	"tennis":  "tennis-channel",
+	"tenis":   "tennis-channel",
+	"snla":    "spectrum-sportsnet-la",
+	"specsn":  "spectrum-sportsnet",
+	"willow":  "willow",
+	"sprtman": "sportsman-channel",
+	"cowboy":  "cowboy-channel",
+	"rfdtv":   "rfd-tv",
+	"outd":    "outdoor-channel",
+	"out":     "outdoor-channel",
+	"racer":   "racer-network",
+	"pursuit": "pursuit",
+	"purst":   "pursuit",
+	"fduel":   "fanduel-tv",
+	"fdueltv": "fanduel-tv",
+	"fduelrc": "fanduel-racing",
+	// Bloomberg / Misc news
+	"bloom":   "bloomberg-television",
+	"cnbcwld": "cnbc-world-flat",
+	// Cartoon / Kids
+	"boom":   "boomerang",
+	"toon":   "cartoon-network",
+	"toonp":  "cartoon-network",
+	"tnck":   "teen-nick",
+	"nik":    "nick",
+	"nicjr":  "nick-jr",
+	"nikton": "nick-toons",
+	"niktn":  "nick-toons",
+	// Religious / Inspirational
+	"byutv": "byu-tv",
+	"kdtx":  "tbn",
+	"tbn":   "tbn",
+	"sbn":   "sbn",
+	"insp":  "insp",
+	"daystar": "daystar",
+	// Cars / Specialty
+	"carstv": "cars-tv",
+	"mt":     "motor-trend",
+	"mthd":   "motor-trend",
+	// Cinemax (base)
+	"cmax": "cinemax",
+	"max":  "cinemax",
+	"cin":  "cinemax",
+	"cinr": "cinemax",
+	"cinhd":  "cinemax",
+	"cinlus": "cinemax-en-espanol",
+	"cinact":  "cinemax-action",
+	"cinacht": "cinemax-action",
+	"cinach":  "cinemax-action",
+	"cinacsp": "cinemax-en-espanol",
+	"cinecls": "cinemax-classics",
+	"cincl":   "cinemax-classics",
+	"cinehit": "cinemax-hits",
+	"cinehp":  "cinemax-hits",
+	"cinehh":  "cinemax-hits",
+	"cineh":   "cinemax-hits",
+	"cinhh":   "cinemax-hits",
+	"cinenos": "cinemax-outermax",
+	"cineste": "cinemax-thrillermax",
+	"cinete":  "cinemax-thrillermax",
+	// Comedy / Cooking / Lifestyle
+	"comedy":  "comedy-central",
+	"cmdytv":  "comedy-central",
+	"cmdtv":   "comedy-central",
+	"cook":    "cooking-channel",
+	"cozitv":  "cozi-tv",
+	"food":    "food-network",
+	"hgtv":    "hgtv",
+	"magn":    "magnolia-network",
+	"recipe":  "recipe-tv",
+	"retro":   "retro-tv",
+	"shorts":  "shorts-tv",
+	"shoplc":  "shop-lc",
+	"gems":    "gem-shopping-network",
+	"qvc":     "qvc",
+	"qvc2":    "qvc-2",
+	"qvc3":    "qvc-3",
+	"hsn":     "hsn",
+	"hsn2":    "hsn-2",
+	// C-SPAN
+	"cspan":  "c-span-1",
+	"cspan1": "c-span-1",
+	"cspan2": "c-span-2",
+	"cspan3": "c-span-3",
+	// E! / ET
+	"e":     "e-entertainment",
+	"etstv": "et-live",
+	"etnew": "et-live",
+	// Freeform / Family
+	"freefrm": "freeform",
+	"frefm":   "freeform",
+	"freefm":  "freeform",
+	// Fox / FX
+	"fx":   "fx",
+	"fxx":  "fxx",
+	"fxm":  "fxm-movie-channel",
+	"fyi":  "fyi",
+	"fmc":  "fmc-family-movie-classics",
+	// Spanish/Latin
+	"gala":      "galavision",
+	"telemundo": "telemundo",
+	"telen":     "telemundo",
+	"unimas":    "unimas",
+	"univision": "univision",
+	"unvso":     "nbc-universo",
+	"tudn":      "tudn",
+	"tudnu":     "tudn",
+	"tr3s":      "tres",
+	// Hallmark
+	"hall":   "hallmark-channel",
+	"hmys":   "hallmark-mystery",
+	"hallm":  "hallmark-movies-now",
+	// Heroes & Icons
+	"hericns": "heroes-and-icons",
+	"heroicn": "heroes-and-icons",
+	// IFC / Indie
+	"ifc": "ifc",
+	// ION
+	"kpxd": "ion-television",
+	"ion":  "ion-television",
+	// Laff / Bounce / Grit / Court
+	"laff":   "laff",
+	"bounce": "bounce",
+	"grit":   "grit",
+	"court":  "court-tv",
+	// Lifetime
+	"life":  "lifetime",
+	"lmn":   "lifetime-movie-network",
+	"lrw":   "lifetime-real-women",
+	"women": "lifetime-real-women",
+	// MGM+
+	"mgm":    "mgm-plus",
+	"mgmhit": "mgm-plus-hits",
+	"mgmhth": "mgm-plus-hits",
+	"mgmdrv": "mgm-plus-drive-in",
+	"mgmmr":  "mgm-plus-marquee",
+	"mgmw":   "mgm-plus",
+	// Military
+	"mil": "military-history",
+	// Me-TV / MyNetwork
+	"metvn": "me-tv",
+	"metv":  "me-tv",
+	"mnnt":  "my-network-tv",
+	"mynet": "my-network-tv",
+	// Movie Plex
+	"mplex": "movie-plex",
+	// National Geographic
+	"ngc":     "national-geographic",
+	"ngmundo": "nat-geo-mundo",
+	"ngwild":  "nat-geo-wild",
+	"ngwi":    "nat-geo-wild",
+	// Ovation / OWN / Oxygen
+	"ovatn": "ovation",
+	"own":   "oprah-winfrey-network",
+	"oxy":   "oxygen",
+	"oxygn": "oxygen",
+	// Paramount
+	"par":     "paramount-network",
+	"parsho":  "paramount-plus-with-showtime",
+	"parshow": "paramount-plus-with-showtime",
+	"paramount": "paramount-plus",
+	// Pets / Misc
+	"petstv":  "pets-tv",
+	"playboy": "playboy-tv",
+	"play":    "playboy-tv",
+	"positiv": "positiv",
+	"postv":   "positiv",
+	"pop":     "pop",
+	// Showtime
+	"sho":      "showtime",
+	"sho2":     "showtime-2",
+	"shocse":   "showtime-showcase",
+	"shocs":    "showtime-showcase",
+	"showx":    "showtime-extreme",
+	"shobet":   "sho-bet",
+	"shobeth":  "sho-bet",
+	"szeb":     "showtime-beyond",
+	"szesu":    "showtime-showcase",
+	// Smithsonian
+	"smith": "smithsonian-channel",
+	"smth":  "smithsonian-channel",
+	"schn":  "smithsonian-channel",
+	// Sony / Movie
+	"sony":   "sony-movie-channel",
+	"sonyhd": "sony-movie-channel",
+	// Starz family
+	"stz":     "starz",
+	"stze":    "starz-edge",
+	"stzk":    "starz-kids-and-family",
+	"stzc":    "starz-cinema",
+	"stzib":   "starz-in-black",
+	"strzib":  "starz-in-black",
+	"stzesp":  "starz-encore-espanol",
+	"stzenc":  "starz-encore",
+	"stzenbk": "starz-encore-black",
+	"stzenac": "starz-encore-action",
+	"stzensu": "starz-encore-suspense",
+	"stzencl": "starz-encore-classic",
+	"stzenws": "starz-encore-westerns",
+	"stzenfm": "starz-encore-family",
+	// Sundance
+	"sundanc":  "sundance-tv",
+	"sundance": "sundance-tv",
+	"sund":     "sundance-tv",
+	// TBS / TCM / TBN / TLC / TNT
+	"tbs": "tbs",
+	"tcm": "tcm",
+	"tlc": "tlc",
+	"tnt": "tnt",
+	// TMC (The Movie Channel)
+	"tmc":  "the-movie-channel",
+	"tmcx": "the-movie-channel-xtra",
+	// Travel
+	"trav":   "travel-channel",
+	"travel": "travel-channel",
+	// TruTV
+	"trutv": "tru-tv",
+	// TV Land
+	"tvland": "tv-land",
+	"tvlnd":  "tv-land",
+	// Up / USA
+	"up":  "up-tv",
+	"usa": "usa",
+	// V-me / WE / Weather / WGN
+	"vme":     "v-me",
+	"vmekids": "vme-kids",
+	"we":      "we-tv",
+	"weath":   "weather-channel",
+	"weather": "weather-channel",
+	"wgn":     "wgn-america",
+	// Bravo / Syfy
+	"bravo": "bravo",
+	"syfy":  "syfy",
+	// HBO
+	"hbo":     "hbo",
+	"hbo2":    "hbo-2",
+	"hbocom":  "hbo-comedy",
+	"hbofam":  "hbo-family",
+	"hboltn":  "hbo-latino",
+	"hbosig":  "hbo-signature",
+	"hbozn":   "hbo-zone",
+	// Gol TV / Misc
+	"goltv":  "gol-tv",
+	"goltve": "gol-tv",
+	"gol":    "gol-tv",
+	"getv":   "get-tv",
+	"gettv":  "get-tv",
+	"local":  "local-now",
+	"logo":   "logo",
+	"hdnetmv": "hdnet-movies",
+}
 
 // helps split compound callsigns like "ESPNHD" → "espn".
 var knownPrefixes = []string{
@@ -101,7 +469,7 @@ func (c *Client) Close() {
 
 // returns a verified logo URL for the channel, or "" if none found.
 // Results are cached by channel ID.
-func (c *Client) Resolve(channelID, callSign, affiliateName string) string {
+func (c *Client) Resolve(channelID, callSign, affiliateName, channelNo string) string {
 	if c == nil {
 		return ""
 	}
@@ -111,7 +479,7 @@ func (c *Client) Resolve(channelID, callSign, affiliateName string) string {
 		return entry.LogoURL
 	}
 
-	candidates := c.generateCandidates(callSign, affiliateName)
+	candidates := c.generateCandidates(callSign, affiliateName, channelNo)
 
 	logoURL := ""
 	for _, slug := range candidates {
@@ -127,7 +495,7 @@ func (c *Client) Resolve(channelID, callSign, affiliateName string) string {
 }
 
 // returns an ordered list of slugs to try.
-func (c *Client) generateCandidates(callSign, affiliateName string) []string {
+func (c *Client) generateCandidates(callSign, affiliateName, channelNo string) []string {
 	seen := make(map[string]bool)
 	var candidates []string
 
@@ -140,33 +508,54 @@ func (c *Client) generateCandidates(callSign, affiliateName string) []string {
 
 	affiliate := strings.ToLower(strings.TrimSpace(affiliateName))
 	call := strings.ToLower(strings.TrimSpace(callSign))
+	bare := bareCallSign(call)
 
-	// Check alias table first
+	// 1. Check affiliate alias table (handles long-form and irregular names)
 	if alias, ok := affiliateAliases[affiliate]; ok {
 		add(alias)
 	}
 
-	// Normalized affiliate name (strip noise words)
-	add(normalizeAffiliate(affiliate))
-
-	// Normalized callsign (strip HD/SD/DT suffixes, try known-prefix split)
-	stripped := stripCallSignSuffix(call)
-	add(stripped)
-
-	// Try known-prefix extraction for compound callsigns
-	for _, prefix := range knownPrefixes {
-		if strings.HasPrefix(stripped, prefix) && len(stripped) > len(prefix) {
-			add(prefix)
-			break
+	// 2. Callsign abbreviation map — covers the common case where the provider
+	// sends a cryptic callsign with no affiliate name (e.g., "HISTORY" → "history-channel").
+	// Try raw callsign first, then suffix-stripped form.
+	if slug, ok := callsignSlugs[call]; ok {
+		add(slug)
+	}
+	if bare != call {
+		if slug, ok := callsignSlugs[bare]; ok {
+			add(slug)
 		}
 	}
 
-	// Full affiliate name as slug (without stripping noise words)
+	// 3. Full affiliate slug — no stripping; matches "action-channel", "history-channel", etc.
 	add(slugify(affiliate))
 
-	// Raw lowered callsign (suffix-stripped only)
-	if stripped != call {
-		add(call) // also try the raw form with suffix
+	// 4. {network}-{channelNo}-{callsign} — matches local affiliate logos like "abc-7-kabc"
+	if network, ok := networkSlugs[affiliate]; ok && bare != "" {
+		if channelNo != "" {
+			add(network + "-" + channelNo + "-" + bare)
+		}
+		// 5. {network}-{callsign} — matches "abc-kota", "nbc-kdlt", "fox-wjzy", etc.
+		add(network + "-" + bare)
+	}
+
+	// 6. Bare callsign alone — matches standalone entries like "wjxt", "wlny"
+	add(bare)
+
+	// 7. Affiliate without leading "the" — "The Weather Channel" → "weather-channel"
+	if strings.HasPrefix(affiliate, "the ") {
+		add(slugify(strings.TrimPrefix(affiliate, "the ")))
+	}
+
+	// 8. Normalized affiliate (strip noise words) — fallback for unusual long-form names
+	add(normalizeAffiliate(affiliate))
+
+	// 9. Known-prefix extraction for compound callsigns like "ESPNHD" → "espn"
+	for _, prefix := range knownPrefixes {
+		if strings.HasPrefix(bare, prefix) && len(bare) > len(prefix) {
+			add(prefix)
+			break
+		}
 	}
 
 	return candidates
@@ -184,15 +573,25 @@ func normalizeAffiliate(name string) string {
 	return slugify(strings.Join(kept, " "))
 }
 
-// removes HD/SD/DT suffixes from callsigns.
-func stripCallSignSuffix(call string) string {
-	return hdSuffixRe.ReplaceAllString(call, "")
+// returns the bare callsign with dash-separated and inline HD/SD/DT/Plus suffixes
+// removed. Strips iteratively so compound suffixes like "HDP" or "HD2" collapse all the
+// way (e.g., MAXHDP → MAXHD → MAX). Stops if the result would be shorter than 2 chars.
+func bareCallSign(call string) string {
+	s := dashSuffixRe.ReplaceAllString(call, "")
+	for {
+		next := hdSuffixRe.ReplaceAllString(s, "")
+		if next == s || len(next) < 2 {
+			break
+		}
+		s = next
+	}
+	return strings.Trim(s, "- ")
 }
 
-// converts a name to a URL-safe slug: lowercase, spaces/punctuation to hyphens.
+// converts a name to a URL-safe slug: lowercase, & → "and", spaces/punctuation to hyphens.
 func slugify(s string) string {
 	s = strings.ToLower(s)
-	// Replace non-alphanumeric with hyphens
+	s = strings.ReplaceAll(s, "&", " and ")
 	var b strings.Builder
 	prev := false
 	for _, r := range s {

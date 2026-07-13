@@ -6,3 +6,10 @@ tvlogo_cache.json
 guide_cache.json
 image_cache/
 demo.gif
+
+# Local analysis artifacts (not part of the project)
+*.ps1
+failing_channels.csv
+missing_channels.txt
+.claude/
+DEPLOY.md
