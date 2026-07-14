@@ -13,10 +13,10 @@ import (
 	"log"
 	"net/http"
 	neturl "net/url"
-	"regexp"
 	"os"
 	"os/signal"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -66,10 +66,10 @@ type APIGuide struct {
 }
 
 type APIChannel struct {
-	ID      string       `json:"id"`
-	Number  string       `json:"number"`
-	Name    string       `json:"name"`
-	LogoURL string       `json:"logoUrl"`
+	ID       string       `json:"id"`
+	Number   string       `json:"number"`
+	Name     string       `json:"name"`
+	LogoURL  string       `json:"logoUrl"`
 	Programs []APIProgram `json:"programs"`
 }
 
@@ -307,8 +307,8 @@ func runScrape(tmdbClient *tmdb.Client, logoClient *tvlogo.Client, lang, country
 const guideCachePath = "guide_cache.json"
 
 type guideCache struct {
-	SavedAt time.Time      `json:"saved_at"`
-	Guide   guide.TVGuide  `json:"guide"`
+	SavedAt time.Time     `json:"saved_at"`
+	Guide   guide.TVGuide `json:"guide"`
 }
 
 // saveGuideCache persists the TVGuide to a JSON file.

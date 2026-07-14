@@ -28,29 +28,29 @@ var countryMap = map[string]countryInfo{
 // when algorithmic normalization wouldn't produce the right slug.
 var affiliateAliases = map[string]string{
 	"home box office":                              "hbo",
-	"national broadcasting company":               "nbc",
-	"american broadcasting company":               "abc",
-	"cbs television network":                      "cbs",
-	"fox entertainment":                           "fox",
-	"fox broadcasting":                            "fox",
-	"fox broadcasting company":                    "fox",
-	"turner network television":                   "tnt",
+	"national broadcasting company":                "nbc",
+	"american broadcasting company":                "abc",
+	"cbs television network":                       "cbs-logo-white",
+	"fox entertainment":                            "fox",
+	"fox broadcasting":                             "fox",
+	"fox broadcasting company":                     "fox",
+	"turner network television":                    "tnt",
 	"entertainment and sports programming network": "espn",
-	"cable news network":                          "cnn",
-	"the weather channel":                         "weather-channel",
-	"comedy central":                              "comedy-central",
-	"cartoon network":                             "cartoon-network",
-	"animal planet":                               "animal-planet",
-	"public broadcasting service":                 "pbs",
-	"cable-satellite public affairs network":      "c-span",
-	"turner classic movies":                       "tcm",
-	"american movie classics":                     "amc",
-	"freeform":                                    "freeform",
-	"fx networks":                                 "fx",
-	"investigation discovery":                     "investigation-discovery",
-	"oprah winfrey network":                       "oprah-winfrey-network",
-	"a and e":                                     "a-and-e",
-	"a&e":                                         "a-and-e",
+	"cable news network":                           "cnn",
+	"the weather channel":                          "weather-channel",
+	"comedy central":                               "comedy-central",
+	"cartoon network":                              "cartoon-network",
+	"animal planet":                                "animal-planet",
+	"public broadcasting service":                  "pbs",
+	"cable-satellite public affairs network":       "c-span-1",
+	"turner classic movies":                        "tcm",
+	"american movie classics":                      "amc",
+	"freeform":                                     "freeform",
+	"fx networks":                                  "fx",
+	"investigation discovery":                      "investigation-discovery",
+	"oprah winfrey network":                        "oprah-winfrey-network",
+	"a and e":                                      "a-and-e",
+	"a&e":                                          "a-and-e",
 }
 
 // networkSlugs maps affiliate name variations to their short network slug,
@@ -95,6 +95,11 @@ var dashSuffixRe = regexp.MustCompile(`(?i)-(tv|dt|hd|ld|dt2|hd2|hd3)$`)
 // empty results are re-checked on next access (matched entries are preserved).
 const matcherVersion = 2
 
+// localAffiliateDir is the tv-logos repo subdirectory holding US local station
+// logos. It is prepended to local-affiliate slugs so buildURL resolves e.g.
+// countries/united-states/us-local/abc-7-kabc-us.png.
+const localAffiliateDir = "us-local/"
+
 // callsignSlugs maps cryptic GraceNote callsign abbreviations to tv-logo repo slugs.
 // Many providers send these short callsigns with NO affiliate name, so direct
 // slugification fails (e.g., "HISTORY" never matches "history-channel-us.png").
@@ -125,18 +130,18 @@ var callsignSlugs = map[string]string{
 	"djch": "disney-jr",
 	"djr":  "disney-jr",
 	// BBC / News
-	"bbca":   "bbc-america",
-	"bbcaus": "bbc-america",
-	"cnbc":   "cnbc",
-	"fnc":    "fox-news",
-	"fbn":    "fox-business",
-	"hln":    "hln",
-	"msnow":  "ms-now",
-	"msnbc":  "msnbc-alt",
-	"newsmx": "newsmax-tv",
-	"nwsntn": "news-nation",
+	"bbca":    "bbc-america",
+	"bbcaus":  "bbc-america",
+	"cnbc":    "cnbc",
+	"fnc":     "fox-news",
+	"fbn":     "fox-business",
+	"hln":     "hln",
+	"msnow":   "ms-now",
+	"msnbc":   "msnbc-alt",
+	"newsmx":  "newsmax-tv",
+	"nwsntn":  "news-nation",
 	"newsntn": "news-nation",
-	"nwsnt":  "news-nation",
+	"nwsnt":   "news-nation",
 	// BET / Music
 	"bet":    "bet",
 	"bher":   "bet-her",
@@ -194,7 +199,7 @@ var callsignSlugs = map[string]string{
 	"fduelrc": "fanduel-racing",
 	// Bloomberg / Misc news
 	"bloom":   "bloomberg-television",
-	"cnbcwld": "cnbc-world-flat",
+	"cnbcwld": "cnbc-world",
 	// Cartoon / Kids
 	"boom":   "boomerang",
 	"toon":   "cartoon-network",
@@ -205,23 +210,23 @@ var callsignSlugs = map[string]string{
 	"nikton": "nick-toons",
 	"niktn":  "nick-toons",
 	// Religious / Inspirational
-	"byutv": "byu-tv",
-	"kdtx":  "tbn",
-	"tbn":   "tbn",
-	"sbn":   "sbn",
-	"insp":  "insp",
+	"byutv":   "byu-tv",
+	"kdtx":    "tbn",
+	"tbn":     "tbn",
+	"sbn":     "sbn",
+	"insp":    "insp",
 	"daystar": "daystar",
 	// Cars / Specialty
 	"carstv": "cars-tv",
 	"mt":     "motor-trend",
 	"mthd":   "motor-trend",
 	// Cinemax (base)
-	"cmax": "cinemax",
-	"max":  "cinemax",
-	"cin":  "cinemax",
-	"cinr": "cinemax",
-	"cinhd":  "cinemax",
-	"cinlus": "cinemax-en-espanol",
+	"cmax":    "cinemax",
+	"max":     "cinemax",
+	"cin":     "cinemax",
+	"cinr":    "cinemax",
+	"cinhd":   "cinemax",
+	"cinlus":  "cinemax-en-espanol",
 	"cinact":  "cinemax-action",
 	"cinacht": "cinemax-action",
 	"cinach":  "cinemax-action",
@@ -237,24 +242,24 @@ var callsignSlugs = map[string]string{
 	"cineste": "cinemax-thrillermax",
 	"cinete":  "cinemax-thrillermax",
 	// Comedy / Cooking / Lifestyle
-	"comedy":  "comedy-central",
-	"cmdytv":  "comedy-central",
-	"cmdtv":   "comedy-central",
-	"cook":    "cooking-channel",
-	"cozitv":  "cozi-tv",
-	"food":    "food-network",
-	"hgtv":    "hgtv",
-	"magn":    "magnolia-network",
-	"recipe":  "recipe-tv",
-	"retro":   "retro-tv",
-	"shorts":  "shorts-tv",
-	"shoplc":  "shop-lc",
-	"gems":    "gem-shopping-network",
-	"qvc":     "qvc",
-	"qvc2":    "qvc-2",
-	"qvc3":    "qvc-3",
-	"hsn":     "hsn",
-	"hsn2":    "hsn-2",
+	"comedy": "comedy-central",
+	"cmdytv": "comedy-central",
+	"cmdtv":  "comedy-central",
+	"cook":   "cooking-channel",
+	"cozitv": "cozi-tv",
+	"food":   "food-network",
+	"hgtv":   "hgtv",
+	"magn":   "magnolia-network",
+	"recipe": "recipe-tv",
+	"retro":  "retro-tv",
+	"shorts": "shorts-tv",
+	"shoplc": "shop-lc",
+	"gems":   "gem-shopping-network",
+	"qvc":    "qvc",
+	"qvc2":   "qvc-2",
+	"qvc3":   "qvc-3",
+	"hsn":    "hsn",
+	"hsn2":   "hsn-2",
 	// C-SPAN
 	"cspan":  "c-span-1",
 	"cspan1": "c-span-1",
@@ -269,11 +274,11 @@ var callsignSlugs = map[string]string{
 	"frefm":   "freeform",
 	"freefm":  "freeform",
 	// Fox / FX
-	"fx":   "fx",
-	"fxx":  "fxx",
-	"fxm":  "fxm-movie-channel",
-	"fyi":  "fyi",
-	"fmc":  "fmc-family-movie-classics",
+	"fx":  "fx",
+	"fxx": "fxx",
+	"fxm": "fxm-movie-channel",
+	"fyi": "fyi",
+	"fmc": "fmc-family-movie-classics",
 	// Spanish/Latin
 	"gala":      "galavision",
 	"telemundo": "telemundo",
@@ -285,9 +290,9 @@ var callsignSlugs = map[string]string{
 	"tudnu":     "tudn",
 	"tr3s":      "tres",
 	// Hallmark
-	"hall":   "hallmark-channel",
-	"hmys":   "hallmark-mystery",
-	"hallm":  "hallmark-movies-now",
+	"hall":  "hallmark-channel",
+	"hmys":  "hallmark-mystery",
+	"hallm": "hallmark-movies-now",
 	// Heroes & Icons
 	"hericns": "heroes-and-icons",
 	"heroicn": "heroes-and-icons",
@@ -333,9 +338,9 @@ var callsignSlugs = map[string]string{
 	"oxy":   "oxygen",
 	"oxygn": "oxygen",
 	// Paramount
-	"par":     "paramount-network",
-	"parsho":  "paramount-plus-with-showtime",
-	"parshow": "paramount-plus-with-showtime",
+	"par":       "paramount-network",
+	"parsho":    "paramount-plus-with-showtime",
+	"parshow":   "paramount-plus-with-showtime",
 	"paramount": "paramount-plus",
 	// Pets / Misc
 	"petstv":  "pets-tv",
@@ -345,15 +350,15 @@ var callsignSlugs = map[string]string{
 	"postv":   "positiv",
 	"pop":     "pop",
 	// Showtime
-	"sho":      "showtime",
-	"sho2":     "showtime-2",
-	"shocse":   "showtime-showcase",
-	"shocs":    "showtime-showcase",
-	"showx":    "showtime-extreme",
-	"shobet":   "sho-bet",
-	"shobeth":  "sho-bet",
-	"szeb":     "showtime-beyond",
-	"szesu":    "showtime-showcase",
+	"sho":     "showtime",
+	"sho2":    "showtime-2",
+	"shocse":  "showtime-showcase",
+	"shocs":   "showtime-showcase",
+	"showx":   "showtime-extreme",
+	"shobet":  "sho-bet",
+	"shobeth": "sho-bet",
+	"szeb":    "showtime-beyond",
+	"szesu":   "showtime-showcase",
 	// Smithsonian
 	"smith": "smithsonian-channel",
 	"smth":  "smithsonian-channel",
@@ -410,21 +415,21 @@ var callsignSlugs = map[string]string{
 	"bravo": "bravo",
 	"syfy":  "syfy",
 	// HBO
-	"hbo":     "hbo",
-	"hbo2":    "hbo-2",
-	"hbocom":  "hbo-comedy",
-	"hbofam":  "hbo-family",
-	"hboltn":  "hbo-latino",
-	"hbosig":  "hbo-signature",
-	"hbozn":   "hbo-zone",
+	"hbo":    "hbo",
+	"hbo2":   "hbo", // no dedicated hbo-2 logo upstream; fall back to HBO brand
+	"hbocom": "hbo-comedy",
+	"hbofam": "hbo-family",
+	"hboltn": "hbo-latino",
+	"hbosig": "hbo", // no dedicated hbo-signature logo upstream
+	"hbozn":  "hbo", // no dedicated hbo-zone logo upstream
 	// Gol TV / Misc
-	"goltv":  "gol-tv",
-	"goltve": "gol-tv",
-	"gol":    "gol-tv",
-	"getv":   "get-tv",
-	"gettv":  "get-tv",
-	"local":  "local-now",
-	"logo":   "logo",
+	"goltv":   "gol-tv",
+	"goltve":  "gol-tv",
+	"gol":     "gol-tv",
+	"getv":    "get-tv",
+	"gettv":   "get-tv",
+	"local":   "local-now",
+	"logo":    "logo",
 	"hdnetmv": "hdnet-movies",
 }
 
@@ -527,19 +532,23 @@ func (c *Client) generateCandidates(callSign, affiliateName, channelNo string) [
 		}
 	}
 
-	// 3. Full affiliate slug — no stripping; matches "action-channel", "history-channel", etc.
-	add(slugify(affiliate))
-
-	// 4. {network}-{channelNo}-{callsign} — matches local affiliate logos like "abc-7-kabc"
+	// 3. Local-affiliate patterns — tried before the generic network slug so a
+	// station's own logo wins over the plain network logo. These live in the
+	// "us-local/" subdirectory of the tv-logos repo, e.g.
+	// countries/united-states/us-local/abc-7-kabc-us.png.
 	if network, ok := networkSlugs[affiliate]; ok && bare != "" {
+		// {network}-{channelNo}-{callsign} — e.g. "abc-7-kabc"
 		if channelNo != "" {
-			add(network + "-" + channelNo + "-" + bare)
+			add(localAffiliateDir + network + "-" + channelNo + "-" + bare)
 		}
-		// 5. {network}-{callsign} — matches "abc-kota", "nbc-kdlt", "fox-wjzy", etc.
-		add(network + "-" + bare)
+		// {network}-{callsign} — e.g. "abc-kota", "nbc-kdlt", "fox-wjzy"
+		add(localAffiliateDir + network + "-" + bare)
 	}
 
-	// 6. Bare callsign alone — matches standalone entries like "wjxt", "wlny"
+	// 4. Full affiliate slug — no stripping; matches "action-channel", "history-channel", etc.
+	add(slugify(affiliate))
+
+	// 5. Bare callsign alone — matches standalone entries like "wjxt", "wlny"
 	add(bare)
 
 	// 7. Affiliate without leading "the" — "The Weather Channel" → "weather-channel"
