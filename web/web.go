@@ -9,8 +9,6 @@ import (
 	"net/http/cookiejar"
 	"net/url"
 	"time"
-
-	"github.com/daniel-widrick/GraceNoteScraper/util"
 )
 
 const userAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_9_3) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/35.0.1916.47 Safari/537.36"
@@ -109,7 +107,7 @@ func (c *Client) GetDataByTime(t int64) (*GridResponse, error) {
 	return &grid, nil
 }
 
-func NewClient() *Client {
+func NewClient(pref Preferences) *Client {
 	jar, err := cookiejar.New(nil)
 	if err != nil {
 		log.Fatalf("Unable to create cookie storage for http client: %v", err)
@@ -123,14 +121,7 @@ func NewClient() *Client {
 				rt: http.DefaultTransport,
 			},
 		},
-		pref: Preferences{
-			Country:  util.GetEnv("GN_COUNTRY", "USA"),
-			ZipCode:  util.GetEnv("GN_ZIPCODE", "13490"),
-			Headend:  util.GetEnv("GN_HEADEND", "lineupId"),
-			LineupId: util.GetEnv("GN_LINEUP", "USA-lineupId-DEFAULT"),
-			Device:   util.GetEnv("GN_DEVICE", "-"),
-			Language: util.GetEnv("GN_LANGUAGE", "en-us"),
-		},
+		pref: pref,
 	}
 }
 
