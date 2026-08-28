@@ -134,6 +134,33 @@
 
     .current-name { font-weight: 750; }
     .current-meta { margin-top: 4px; color: var(--muted); font-size: 13px; }
+    .current-actions { display: flex; align-items: center; gap: 9px; }
+
+    .secondary-button {
+      min-height: 40px;
+      padding: 0 14px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, .035);
+      color: var(--muted);
+    }
+
+    .secondary-button:hover { border-color: var(--accent); background: rgba(255, 255, 255, .055); color: var(--text); }
+
+    .guide-status {
+      display: none;
+      margin: 0 0 20px;
+      padding: 18px 20px;
+      border: 1px solid var(--line);
+      border-radius: 15px;
+      background: rgba(16, 30, 25, .88);
+    }
+
+    .guide-status.show { display: block; }
+    .status-heading { display: flex; justify-content: space-between; gap: 14px; font-weight: 750; }
+    .status-stage { color: var(--accent); }
+    .status-detail { margin-top: 6px; color: var(--muted); font-size: 13px; }
+    .progress-track { overflow: hidden; height: 7px; margin-top: 13px; border-radius: 999px; background: rgba(255, 255, 255, .08); }
+    .progress-fill { width: 0; height: 100%; border-radius: inherit; background: var(--accent); transition: width .25s ease; }
 
     .panel {
       overflow: hidden;
@@ -319,6 +346,7 @@
       .search-area, .results { padding-left: 18px; padding-right: 18px; }
       .search-form { grid-template-columns: 1fr; }
       .current, .save-row { align-items: flex-start; flex-direction: column; }
+      .current-actions { width: 100%; flex-wrap: wrap; }
       .provider-card { grid-template-columns: 22px 1fr; }
       .provider-device { display: none; }
     }
@@ -343,10 +371,19 @@
         <div class="current-name" id="currentName"></div>
         <div class="current-meta" id="currentMeta"></div>
       </div>
-      <a class="guide-link" style="display:inline-block" href="/">View guide</a>
+      <div class="current-actions">
+        <button class="secondary-button" id="changeButton" type="button">Change lineup</button>
+        <a class="guide-link" style="display:inline-block" href="/">View guide</a>
+      </div>
     </section>
 
-    <section class="panel">
+    <section class="guide-status" id="guideStatus" aria-live="polite">
+      <div class="status-heading"><span id="statusMessage">Checking guide status…</span><span class="status-stage" id="statusStage"></span></div>
+      <div class="status-detail" id="statusDetail"></div>
+      <div class="progress-track" id="progressTrack" hidden><div class="progress-fill" id="progressFill"></div></div>
+    </section>
+
+    <section class="panel" id="chooserPanel">
       <div class="search-area">
         <div class="step"><span class="step-number">1</span><span>Find lineups for your area</span></div>
         <form class="search-form" id="searchForm">
@@ -386,6 +423,14 @@
       var currentCard = document.getElementById('currentCard');
       var currentName = document.getElementById('currentName');
       var currentMeta = document.getElementById('currentMeta');
+      var changeButton = document.getElementById('changeButton');
+      var chooserPanel = document.getElementById('chooserPanel');
+      var guideStatus = document.getElementById('guideStatus');
+      var statusMessage = document.getElementById('statusMessage');
+      var statusStage = document.getElementById('statusStage');
+      var statusDetail = document.getElementById('statusDetail');
+      var progressTrack = document.getElementById('progressTrack');
+      var progressFill = document.getElementById('progressFill');
       var guideLink = document.getElementById('guideLink');
       var form = document.getElementById('searchForm');
       var country = document.getElementById('country');
@@ -400,6 +445,8 @@
       var providers = [];
       var selectedIndex = -1;
       var language = 'en-us';
+      var configured = false;
+      var statusTimer = null;
 
       function setMessage(text, kind) {
         message.textContent = text || '';
@@ -419,14 +466,57 @@
         if (provider.location) pieces.push(provider.location);
         if (provider.device === 'L') pieces.push('Digital rebuild');
         else if (provider.device === 'X') pieces.push('Digital');
+        if (provider.channelCountKnown) pieces.push(provider.channelCount.toLocaleString() + ' channels');
         return pieces.join(' · ') || providerTypeLabel(provider.type);
       }
 
       function providerDeviceLabel(provider) {
+        var device;
         if (provider.device === 'L') return 'Rebuild';
         if (provider.device === 'X') return 'Digital';
         if (provider.type === 'OTA') return 'OTA';
-        return provider.type || 'Other';
+        device = provider.type || 'Other';
+        return device;
+      }
+
+      function showConfigured(config) {
+        configured = true;
+        currentName.textContent = config.providerName;
+        currentMeta.textContent = [config.location, config.postalCode, providerTypeLabel(config.providerType)].filter(Boolean).join(' · ');
+        currentCard.style.display = 'flex';
+        guideLink.style.display = 'inline-block';
+        chooserPanel.style.display = 'none';
+        guideStatus.classList.add('show');
+        pollGuideStatus();
+      }
+
+      function renderGuideStatus(status) {
+        var labels = { queued: 'Queued', starting: 'Starting', gracenote: 'Guide download', logos: 'Channel logos', tmdb: 'TMDB enrichment', saving: 'Saving guide', ready: 'Complete', error: 'Needs attention', idle: 'Waiting' };
+        statusMessage.textContent = status.message || 'Guide status unavailable';
+        statusStage.textContent = labels[status.stage] || status.stage || '';
+        var details = [];
+        if (status.channels) details.push(status.channels.toLocaleString() + ' channels');
+        if (status.programs) details.push(status.programs.toLocaleString() + ' programs');
+        statusDetail.textContent = details.join(' · ');
+        var hasProgress = status.running && status.total > 0;
+        progressTrack.hidden = !hasProgress;
+        progressFill.style.width = hasProgress ? Math.max(0, Math.min(100, status.completed * 100 / status.total)) + '%' : '0';
+      }
+
+      function pollGuideStatus() {
+        if (!configured) return;
+        clearTimeout(statusTimer);
+        fetch('/api/setup/status', { cache: 'no-store' })
+          .then(function (response) {
+            if (!response.ok) throw new Error('Unable to read guide status');
+            return response.json();
+          })
+          .then(renderGuideStatus)
+          .catch(function (error) {
+            statusMessage.textContent = error.message;
+            statusStage.textContent = '';
+          })
+          .finally(function () { statusTimer = setTimeout(pollGuideStatus, 2000); });
       }
 
       function loadCurrentConfig() {
@@ -438,10 +528,7 @@
           .then(function (data) {
             if (!data.configured || !data.gracenote) return;
             var config = data.gracenote;
-            currentName.textContent = config.providerName;
-            currentMeta.textContent = [config.location, config.postalCode, providerTypeLabel(config.providerType)].filter(Boolean).join(' · ');
-            currentCard.style.display = 'flex';
-            guideLink.style.display = 'inline-block';
+            showConfigured(config);
             country.value = config.country || 'USA';
             postalCode.value = config.postalCode || '';
             language = config.language || 'en-us';
@@ -535,7 +622,7 @@
         var postal = postalCode.value.trim().toUpperCase();
         if (!postal) return;
 
-        setMessage('Looking up lineups for ' + postal + '…');
+        setMessage('Looking up lineups and channel counts for ' + postal + '…');
         searchButton.disabled = true;
         results.style.display = 'none';
         providers = [];
@@ -589,17 +676,23 @@
             return response.json();
           })
           .then(function (data) {
-            currentName.textContent = data.provider.providerName;
-            currentMeta.textContent = [data.provider.location, data.provider.postalCode, providerTypeLabel(data.provider.providerType)].filter(Boolean).join(' · ');
-            currentCard.style.display = 'flex';
-            guideLink.style.display = 'inline-block';
-            setMessage('Lineup saved. A fresh guide has been queued; the first complete build can take several minutes.', 'success');
+            showConfigured(data.provider);
+            results.style.display = 'none';
+            setMessage('');
             window.scrollTo({ top: 0, behavior: 'smooth' });
           })
           .catch(function (error) {
             setMessage(error.message || 'Unable to save this lineup.', 'error');
           })
           .finally(function () { saveButton.disabled = false; });
+      });
+
+      changeButton.addEventListener('click', function () {
+        chooserPanel.style.display = 'block';
+        results.style.display = 'none';
+        setMessage('Choose another lineup. Your current lineup remains active until you save a replacement.');
+        window.scrollTo({ top: chooserPanel.offsetTop - 20, behavior: 'smooth' });
+        postalCode.focus();
       });
 
       loadCurrentConfig();

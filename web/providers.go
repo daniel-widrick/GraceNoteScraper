@@ -24,6 +24,8 @@ type Provider struct {
 	IsDefaultProvider string `json:"isDefaultProvider"`
 	PostalCode        string `json:"postalCode"`
 	HeadendID         string `json:"headendId"`
+	ChannelCount      int    `json:"channelCount,omitempty"`
+	ChannelCountKnown bool   `json:"channelCountKnown,omitempty"`
 }
 
 // ProviderResponse is the public provider-discovery response used by the

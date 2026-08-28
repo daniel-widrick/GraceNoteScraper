@@ -23,6 +23,16 @@ type fakeProviderFinder struct {
 	language string
 }
 
+type fakeProviderChannelCounter struct {
+	count int
+	calls int
+}
+
+func (f *fakeProviderChannelCounter) CountChannels(_ context.Context, _, _, _ string, _ web.Provider) (int, error) {
+	f.calls++
+	return f.count, nil
+}
+
 func (f *fakeProviderFinder) FindProviders(_ context.Context, country, postalCode, language string) (*web.ProviderResponse, error) {
 	f.country = country
 	f.postal = postalCode
@@ -45,10 +55,12 @@ func TestSetupProviderFlow(t *testing.T) {
 		HeadendID:  "NY67791",
 	}
 	finder := &fakeProviderFinder{response: &web.ProviderResponse{Providers: []web.Provider{provider}}}
+	counter := &fakeProviderChannelCounter{count: 343}
 	callbackCount := 0
 	server := &setupServer{
-		store:     store,
-		providers: finder,
+		store:          store,
+		providers:      finder,
+		channelCounter: counter,
 		onProviderSaved: func(changed bool) {
 			if !changed {
 				t.Error("first save reported unchanged")
@@ -65,6 +77,13 @@ func TestSetupProviderFlow(t *testing.T) {
 	}
 	if finder.country != "USA" || finder.postal != "11743" || finder.language != "en-us" {
 		t.Fatalf("lookup = %q/%q/%q", finder.country, finder.postal, finder.language)
+	}
+	var providerResponse web.ProviderResponse
+	if err := json.Unmarshal(recorder.Body.Bytes(), &providerResponse); err != nil {
+		t.Fatalf("decoding provider response: %v", err)
+	}
+	if counter.calls != 1 || !providerResponse.Providers[0].ChannelCountKnown || providerResponse.Providers[0].ChannelCount != 343 {
+		t.Fatalf("channel count response = %+v, calls = %d", providerResponse.Providers[0], counter.calls)
 	}
 
 	payload := `{
@@ -129,8 +148,34 @@ func TestSetupPageIsEmbedded(t *testing.T) {
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status = %d", recorder.Code)
 	}
-	if !strings.Contains(recorder.Body.String(), "GraceNoteScraper setup") {
+	body := recorder.Body.String()
+	if !strings.Contains(body, "GraceNoteScraper setup") {
 		t.Fatal("setup page marker not found")
+	}
+	for _, expected := range []string{`id="changeButton"`, `id="guideStatus"`, `id="chooserPanel"`, "channelCountKnown"} {
+		if !strings.Contains(body, expected) {
+			t.Fatalf("setup page is missing %q", expected)
+		}
+	}
+}
+
+func TestSetupScrapeStatus(t *testing.T) {
+	status := newScrapeStatus(false, 0, 0)
+	status.start("Starting guide download")
+	status.update("gracenote", "Downloading guide data (3 of 56)", 2, 56, 335, 4100)
+	server := &setupServer{scrapeStatus: status}
+	request := httptest.NewRequest(http.MethodGet, "/api/setup/status", nil)
+	recorder := httptest.NewRecorder()
+	server.handleScrapeStatus(recorder, request)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d", recorder.Code)
+	}
+	var response scrapeStatusSnapshot
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if !response.Running || response.Stage != "gracenote" || response.Completed != 2 || response.Total != 56 || response.Channels != 335 {
+		t.Fatalf("unexpected scrape status: %+v", response)
 	}
 }
 
