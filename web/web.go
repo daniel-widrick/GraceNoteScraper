@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -9,8 +10,6 @@ import (
 	"net/http/cookiejar"
 	"net/url"
 	"time"
-
-	"github.com/daniel-widrick/GraceNoteScraper/util"
 )
 
 const userAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_9_3) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/35.0.1916.47 Safari/537.36"
@@ -66,6 +65,10 @@ type Client struct {
 }
 
 func (c *Client) GetDataByTime(t int64) (*GridResponse, error) {
+	return c.GetDataByTimeContext(context.Background(), t)
+}
+
+func (c *Client) GetDataByTimeContext(ctx context.Context, t int64) (*GridResponse, error) {
 	log.Printf("headendId=%s lineupId=%s zipCode=%s", c.pref.Headend, c.pref.LineupId, c.pref.ZipCode)
 
 	params := url.Values{
@@ -85,7 +88,7 @@ func (c *Client) GetDataByTime(t int64) (*GridResponse, error) {
 	}
 	gridURL := "https://tvlistings.gracenote.com/api/grid?" + params.Encode()
 	log.Printf("Fetching: %s", gridURL)
-	req, err := http.NewRequest("GET", gridURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, gridURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("GetDataByTime failed to build request: %w", err)
 	}
@@ -109,7 +112,7 @@ func (c *Client) GetDataByTime(t int64) (*GridResponse, error) {
 	return &grid, nil
 }
 
-func NewClient() *Client {
+func NewClient(pref Preferences) *Client {
 	jar, err := cookiejar.New(nil)
 	if err != nil {
 		log.Fatalf("Unable to create cookie storage for http client: %v", err)
@@ -123,14 +126,7 @@ func NewClient() *Client {
 				rt: http.DefaultTransport,
 			},
 		},
-		pref: Preferences{
-			Country:  util.GetEnv("GN_COUNTRY", "USA"),
-			ZipCode:  util.GetEnv("GN_ZIPCODE", "13490"),
-			Headend:  util.GetEnv("GN_HEADEND", "lineupId"),
-			LineupId: util.GetEnv("GN_LINEUP", "USA-lineupId-DEFAULT"),
-			Device:   util.GetEnv("GN_DEVICE", "-"),
-			Language: util.GetEnv("GN_LANGUAGE", "en-us"),
-		},
+		pref: pref,
 	}
 }
 

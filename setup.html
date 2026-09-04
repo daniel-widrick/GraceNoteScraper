@@ -1,0 +1,787 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GraceNoteScraper setup</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --page: #07110e;
+      --panel: #101e19;
+      --panel-strong: #152720;
+      --line: #2b463b;
+      --text: #f2f7f4;
+      --muted: #a8bbb2;
+      --accent: #7ce6a6;
+      --accent-strong: #4bc77d;
+      --danger: #ff9b94;
+      --warning: #f6d274;
+      --shadow: 0 24px 70px rgba(0, 0, 0, .32);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background:
+        radial-gradient(circle at 12% -10%, rgba(75, 199, 125, .18), transparent 35rem),
+        linear-gradient(145deg, #07110e 0%, #0b1512 52%, #08100e 100%);
+      color: var(--text);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    a { color: inherit; }
+
+    .shell {
+      width: min(1040px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 42px 0 70px;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+      margin-bottom: 36px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-weight: 760;
+      letter-spacing: -.02em;
+    }
+
+    .brand-mark {
+      display: grid;
+      width: 42px;
+      height: 42px;
+      place-items: center;
+      border: 1px solid rgba(124, 230, 166, .45);
+      border-radius: 13px;
+      background: linear-gradient(145deg, rgba(124, 230, 166, .22), rgba(124, 230, 166, .05));
+      box-shadow: inset 0 0 20px rgba(124, 230, 166, .08);
+      color: var(--accent);
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 18px;
+    }
+
+    .guide-link {
+      display: none;
+      padding: 10px 14px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      color: var(--muted);
+      text-decoration: none;
+    }
+
+    .guide-link:hover { border-color: var(--accent); color: var(--text); }
+
+    .hero {
+      max-width: 760px;
+      margin-bottom: 28px;
+    }
+
+    .eyebrow {
+      margin: 0 0 12px;
+      color: var(--accent);
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: .16em;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      max-width: 690px;
+      margin: 0;
+      font-size: clamp(34px, 7vw, 60px);
+      line-height: 1.02;
+      letter-spacing: -.045em;
+    }
+
+    .hero p:last-child {
+      max-width: 650px;
+      margin: 18px 0 0;
+      color: var(--muted);
+      font-size: 17px;
+      line-height: 1.65;
+    }
+
+    .current {
+      display: none;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+      margin: 0 0 20px;
+      padding: 18px 20px;
+      border: 1px solid rgba(124, 230, 166, .28);
+      border-radius: 15px;
+      background: rgba(124, 230, 166, .075);
+    }
+
+    .current-label {
+      margin-bottom: 4px;
+      color: var(--accent);
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: .14em;
+      text-transform: uppercase;
+    }
+
+    .current-copy { min-width: 0; }
+    .current-name { font-weight: 750; }
+    .current-meta { margin-top: 4px; color: var(--muted); font-size: 13px; }
+    .xmltv-url { display: grid; gap: 3px; margin-top: 12px; }
+    .xmltv-url-label {
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+    }
+    .xmltv-url-link {
+      justify-self: start;
+      min-height: 0;
+      padding: 0;
+      border: 0;
+      border-radius: 0;
+      background: transparent;
+      color: var(--accent);
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 13px;
+      overflow-wrap: anywhere;
+      text-align: left;
+      text-underline-offset: 3px;
+    }
+    .xmltv-url-link:hover { background: transparent; color: var(--text); text-decoration: underline; }
+    .xmltv-copy-status { min-height: 1.2em; color: var(--muted); font-size: 12px; }
+    .xmltv-copy-status.success { color: var(--accent); }
+    .xmltv-copy-status.error { color: var(--danger); }
+    .current-actions { display: flex; align-items: center; gap: 9px; }
+
+    .secondary-button {
+      min-height: 40px;
+      padding: 0 14px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, .035);
+      color: var(--muted);
+    }
+
+    .secondary-button:hover { border-color: var(--accent); background: rgba(255, 255, 255, .055); color: var(--text); }
+
+    .guide-status {
+      display: none;
+      margin: 0 0 20px;
+      padding: 18px 20px;
+      border: 1px solid var(--line);
+      border-radius: 15px;
+      background: rgba(16, 30, 25, .88);
+    }
+
+    .guide-status.show { display: block; }
+    .status-heading { display: flex; justify-content: space-between; gap: 14px; font-weight: 750; }
+    .status-stage { color: var(--accent); }
+    .status-detail { margin-top: 6px; color: var(--muted); font-size: 13px; }
+    .progress-track { overflow: hidden; height: 7px; margin-top: 13px; border-radius: 999px; background: rgba(255, 255, 255, .08); }
+    .progress-fill { width: 0; height: 100%; border-radius: inherit; background: var(--accent); transition: width .25s ease; }
+
+    .panel {
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      background: rgba(16, 30, 25, .94);
+      box-shadow: var(--shadow);
+    }
+
+    .search-area { padding: 28px; }
+
+    .step {
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      margin-bottom: 18px;
+      font-weight: 730;
+    }
+
+    .step-number {
+      display: grid;
+      width: 29px;
+      height: 29px;
+      place-items: center;
+      border-radius: 50%;
+      background: var(--accent);
+      color: #092015;
+      font-size: 13px;
+      font-weight: 900;
+    }
+
+    .search-form {
+      display: grid;
+      grid-template-columns: minmax(145px, .65fr) minmax(220px, 1.35fr) auto;
+      gap: 13px;
+      align-items: end;
+    }
+
+    label {
+      display: grid;
+      gap: 8px;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 650;
+    }
+
+    input, select, button { font: inherit; }
+
+    input, select {
+      width: 100%;
+      height: 48px;
+      padding: 0 14px;
+      border: 1px solid var(--line);
+      border-radius: 11px;
+      outline: none;
+      background: #09130f;
+      color: var(--text);
+    }
+
+    input:focus, select:focus {
+      border-color: var(--accent-strong);
+      box-shadow: 0 0 0 3px rgba(75, 199, 125, .13);
+    }
+
+    button {
+      min-height: 48px;
+      padding: 0 20px;
+      border: 0;
+      border-radius: 11px;
+      background: var(--accent);
+      color: #092015;
+      font-weight: 820;
+      cursor: pointer;
+    }
+
+    button:hover { background: #9af0bb; }
+    button:disabled { cursor: wait; opacity: .58; }
+
+    .message {
+      display: none;
+      margin-top: 16px;
+      padding: 12px 14px;
+      border-radius: 10px;
+      color: var(--muted);
+      background: rgba(255, 255, 255, .04);
+      font-size: 14px;
+      line-height: 1.45;
+    }
+
+    .message.error { color: var(--danger); background: rgba(255, 95, 87, .08); }
+    .message.success { color: var(--accent); background: rgba(124, 230, 166, .08); }
+
+    .results {
+      display: none;
+      padding: 0 28px 28px;
+      border-top: 1px solid var(--line);
+    }
+
+    .results .step { margin-top: 26px; }
+
+    .provider-group + .provider-group { margin-top: 26px; }
+
+    .provider-heading {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin: 0 0 11px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: .13em;
+      text-transform: uppercase;
+    }
+
+    .provider-count {
+      padding: 2px 7px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, .07);
+      color: var(--muted);
+      font-size: 11px;
+      letter-spacing: 0;
+    }
+
+    .provider-list { display: grid; gap: 9px; }
+
+    .provider-card {
+      display: grid;
+      grid-template-columns: 22px 1fr auto;
+      gap: 13px;
+      align-items: center;
+      min-height: 68px;
+      padding: 14px 16px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: rgba(7, 17, 14, .48);
+      cursor: pointer;
+    }
+
+    .provider-card:hover { border-color: #4d6f61; }
+    .provider-card.selected { border-color: var(--accent); background: rgba(124, 230, 166, .075); }
+
+    .provider-card input {
+      width: 18px;
+      height: 18px;
+      margin: 0;
+      accent-color: var(--accent-strong);
+    }
+
+    .provider-name { color: var(--text); font-weight: 720; }
+    .provider-location { margin-top: 3px; color: var(--muted); font-size: 13px; }
+
+    .provider-device {
+      padding: 5px 8px;
+      border-radius: 7px;
+      background: rgba(255, 255, 255, .055);
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 750;
+    }
+
+    .save-row {
+      display: none;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+      margin-top: 24px;
+      padding-top: 20px;
+      border-top: 1px solid var(--line);
+    }
+
+    .save-note { max-width: 570px; color: var(--muted); font-size: 13px; line-height: 1.5; }
+
+    .footnote {
+      margin: 18px 3px 0;
+      color: #789087;
+      font-size: 12px;
+      line-height: 1.55;
+    }
+
+    @media (max-width: 720px) {
+      .shell { width: min(100% - 22px, 1040px); padding-top: 24px; }
+      .topbar { margin-bottom: 28px; }
+      .search-area, .results { padding-left: 18px; padding-right: 18px; }
+      .search-form { grid-template-columns: 1fr; }
+      .current, .save-row { align-items: flex-start; flex-direction: column; }
+      .current-actions { width: 100%; flex-wrap: wrap; }
+      .provider-card { grid-template-columns: 22px 1fr; }
+      .provider-device { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <div class="brand"><span class="brand-mark">GN</span><span>GraceNoteScraper</span></div>
+      <a class="guide-link" id="guideLink" href="/">Open guide</a>
+    </header>
+
+    <section class="hero">
+      <p class="eyebrow">Lineup setup</p>
+      <h1>Choose the channels available where you live.</h1>
+      <p>Enter your ZIP or postal code, then choose the cable, satellite, or over-the-air lineup that should power the scraper.</p>
+    </section>
+
+    <section class="current" id="currentCard" aria-live="polite">
+      <div class="current-copy">
+        <div class="current-label">Current lineup</div>
+        <div class="current-name" id="currentName"></div>
+        <div class="current-meta" id="currentMeta"></div>
+        <div class="xmltv-url">
+          <span class="xmltv-url-label">XMLTV guide URL</span>
+          <button class="xmltv-url-link" id="xmltvGuideLink" type="button" title="Copy XMLTV guide URL"></button>
+          <span class="xmltv-copy-status" id="xmltvCopyStatus" aria-live="polite"></span>
+        </div>
+      </div>
+      <div class="current-actions">
+        <button class="secondary-button" id="changeButton" type="button">Change lineup</button>
+        <a class="guide-link" style="display:inline-block" href="/">View guide</a>
+      </div>
+    </section>
+
+    <section class="guide-status" id="guideStatus" aria-live="polite">
+      <div class="status-heading"><span id="statusMessage">Checking guide status…</span><span class="status-stage" id="statusStage"></span></div>
+      <div class="status-detail" id="statusDetail"></div>
+      <div class="progress-track" id="progressTrack" hidden><div class="progress-fill" id="progressFill"></div></div>
+    </section>
+
+    <section class="panel" id="chooserPanel">
+      <div class="search-area">
+        <div class="step"><span class="step-number">1</span><span>Find lineups for your area</span></div>
+        <form class="search-form" id="searchForm">
+          <label>Country
+            <select id="country" name="country">
+              <option value="USA">United States</option>
+              <option value="CAN">Canada</option>
+              <option value="GBR">United Kingdom</option>
+              <option value="AUS">Australia</option>
+            </select>
+          </label>
+          <label>ZIP or postal code
+            <input id="postalCode" name="postalCode" autocomplete="postal-code" inputmode="text" maxlength="16" placeholder="11743" required>
+          </label>
+          <button id="searchButton" type="submit">Find lineups</button>
+        </form>
+        <div class="message" id="message" role="status" aria-live="polite"></div>
+      </div>
+
+      <div class="results" id="results">
+        <div class="step"><span class="step-number">2</span><span>Choose your provider lineup</span></div>
+        <div id="providerGroups"></div>
+        <div class="save-row" id="saveRow">
+          <div class="save-note">This becomes the active source for the guide. The first full guide build can take several minutes.</div>
+          <button id="saveButton" type="button">Use this lineup</button>
+        </div>
+      </div>
+    </section>
+
+    <p class="footnote">Lineup availability comes from Gracenote's provider directory. GraceNoteScraper stores the selected lineup identifiers locally; this step does not require a provider account or password.</p>
+  </main>
+
+  <script>
+    (function () {
+      'use strict';
+
+      var currentCard = document.getElementById('currentCard');
+      var currentName = document.getElementById('currentName');
+      var currentMeta = document.getElementById('currentMeta');
+      var xmltvGuideLink = document.getElementById('xmltvGuideLink');
+      var xmltvCopyStatus = document.getElementById('xmltvCopyStatus');
+      var changeButton = document.getElementById('changeButton');
+      var chooserPanel = document.getElementById('chooserPanel');
+      var guideStatus = document.getElementById('guideStatus');
+      var statusMessage = document.getElementById('statusMessage');
+      var statusStage = document.getElementById('statusStage');
+      var statusDetail = document.getElementById('statusDetail');
+      var progressTrack = document.getElementById('progressTrack');
+      var progressFill = document.getElementById('progressFill');
+      var guideLink = document.getElementById('guideLink');
+      var form = document.getElementById('searchForm');
+      var country = document.getElementById('country');
+      var postalCode = document.getElementById('postalCode');
+      var searchButton = document.getElementById('searchButton');
+      var message = document.getElementById('message');
+      var results = document.getElementById('results');
+      var providerGroups = document.getElementById('providerGroups');
+      var saveRow = document.getElementById('saveRow');
+      var saveButton = document.getElementById('saveButton');
+
+      var providers = [];
+      var selectedIndex = -1;
+      var language = 'en-us';
+      var configured = false;
+      var statusTimer = null;
+
+      var xmltvGuideURL = new URL('/xmlguide.xmltv', window.location.href).href;
+      xmltvGuideLink.textContent = xmltvGuideURL;
+
+      function setXMLTVCopyStatus(text, kind) {
+        xmltvCopyStatus.textContent = text;
+        xmltvCopyStatus.className = 'xmltv-copy-status' + (kind ? ' ' + kind : '');
+      }
+
+      function fallbackCopyXMLTVGuideURL() {
+        var input = document.createElement('textarea');
+        input.value = xmltvGuideURL;
+        input.setAttribute('readonly', '');
+        input.style.position = 'fixed';
+        input.style.opacity = '0';
+        document.body.appendChild(input);
+        input.select();
+        var copied = false;
+        try {
+          copied = document.execCommand('copy');
+        } catch (error) {
+          copied = false;
+        }
+        document.body.removeChild(input);
+        if (!copied) throw new Error('Clipboard unavailable');
+      }
+
+      function copyXMLTVGuideURL() {
+        setXMLTVCopyStatus('Copying…');
+        if (navigator.clipboard && window.isSecureContext) {
+          navigator.clipboard.writeText(xmltvGuideURL)
+            .then(function () { setXMLTVCopyStatus('Copied to clipboard.', 'success'); })
+            .catch(function () {
+              try {
+                fallbackCopyXMLTVGuideURL();
+                setXMLTVCopyStatus('Copied to clipboard.', 'success');
+              } catch (error) {
+                setXMLTVCopyStatus('Could not copy automatically. Select and copy the URL manually.', 'error');
+              }
+            });
+          return;
+        }
+        try {
+          fallbackCopyXMLTVGuideURL();
+          setXMLTVCopyStatus('Copied to clipboard.', 'success');
+        } catch (error) {
+          setXMLTVCopyStatus('Could not copy automatically. Select and copy the URL manually.', 'error');
+        }
+      }
+
+      xmltvGuideLink.addEventListener('click', copyXMLTVGuideURL);
+
+      function setMessage(text, kind) {
+        message.textContent = text || '';
+        message.className = 'message' + (kind ? ' ' + kind : '');
+        message.style.display = text ? 'block' : 'none';
+      }
+
+      function providerTypeLabel(type) {
+        if (type === 'CABLE') return 'Cable and fiber';
+        if (type === 'SATELLITE') return 'Satellite';
+        if (type === 'OTA') return 'Over the air';
+        return type || 'Other';
+      }
+
+      function providerMeta(provider) {
+        var pieces = [];
+        if (provider.location) pieces.push(provider.location);
+        if (provider.device === 'L') pieces.push('Digital rebuild');
+        else if (provider.device === 'X') pieces.push('Digital');
+        if (provider.channelCountKnown) pieces.push(provider.channelCount.toLocaleString() + ' channels');
+        return pieces.join(' · ') || providerTypeLabel(provider.type);
+      }
+
+      function providerDeviceLabel(provider) {
+        var device;
+        if (provider.device === 'L') return 'Rebuild';
+        if (provider.device === 'X') return 'Digital';
+        if (provider.type === 'OTA') return 'OTA';
+        device = provider.type || 'Other';
+        return device;
+      }
+
+      function showConfigured(config) {
+        configured = true;
+        currentName.textContent = config.providerName;
+        currentMeta.textContent = [config.location, config.postalCode, providerTypeLabel(config.providerType)].filter(Boolean).join(' · ');
+        currentCard.style.display = 'flex';
+        guideLink.style.display = 'inline-block';
+        chooserPanel.style.display = 'none';
+        guideStatus.classList.add('show');
+        pollGuideStatus();
+      }
+
+      function renderGuideStatus(status) {
+        var labels = { queued: 'Queued', starting: 'Starting', gracenote: 'Guide download', logos: 'Channel logos', tmdb: 'TMDB enrichment', saving: 'Saving guide', ready: 'Complete', error: 'Needs attention', idle: 'Waiting' };
+        statusMessage.textContent = status.message || 'Guide status unavailable';
+        statusStage.textContent = labels[status.stage] || status.stage || '';
+        var details = [];
+        if (status.channels) details.push(status.channels.toLocaleString() + ' channels');
+        if (status.programs) details.push(status.programs.toLocaleString() + ' programs');
+        statusDetail.textContent = details.join(' · ');
+        var hasProgress = status.running && status.total > 0;
+        progressTrack.hidden = !hasProgress;
+        progressFill.style.width = hasProgress ? Math.max(0, Math.min(100, status.completed * 100 / status.total)) + '%' : '0';
+      }
+
+      function pollGuideStatus() {
+        if (!configured) return;
+        clearTimeout(statusTimer);
+        fetch('/api/setup/status', { cache: 'no-store' })
+          .then(function (response) {
+            if (!response.ok) throw new Error('Unable to read guide status');
+            return response.json();
+          })
+          .then(renderGuideStatus)
+          .catch(function (error) {
+            statusMessage.textContent = error.message;
+            statusStage.textContent = '';
+          })
+          .finally(function () { statusTimer = setTimeout(pollGuideStatus, 2000); });
+      }
+
+      function loadCurrentConfig() {
+        fetch('/api/setup/config', { cache: 'no-store' })
+          .then(function (response) {
+            if (!response.ok) throw new Error('Unable to load current setup');
+            return response.json();
+          })
+          .then(function (data) {
+            if (!data.configured || !data.gracenote) return;
+            var config = data.gracenote;
+            showConfigured(config);
+            country.value = config.country || 'USA';
+            postalCode.value = config.postalCode || '';
+            language = config.language || 'en-us';
+          })
+          .catch(function () {
+            setMessage('The saved setup could not be read. You can choose the lineup again below.', 'error');
+          });
+      }
+
+      function chooseProvider(index) {
+        selectedIndex = index;
+        var cards = providerGroups.querySelectorAll('.provider-card');
+        for (var i = 0; i < cards.length; i++) {
+          var chosen = Number(cards[i].getAttribute('data-index')) === index;
+          cards[i].classList.toggle('selected', chosen);
+          cards[i].querySelector('input').checked = chosen;
+        }
+        saveRow.style.display = 'flex';
+      }
+
+      function renderProviders() {
+        providerGroups.textContent = '';
+        selectedIndex = -1;
+        saveRow.style.display = 'none';
+
+        var grouped = {};
+        providers.forEach(function (provider, index) {
+          var type = provider.type || 'OTHER';
+          if (['CABLE', 'SATELLITE', 'OTA'].indexOf(type) === -1) type = 'OTHER';
+          if (!grouped[type]) grouped[type] = [];
+          grouped[type].push({ provider: provider, index: index });
+        });
+
+        ['CABLE', 'SATELLITE', 'OTA', 'OTHER'].forEach(function (type) {
+          var entries = grouped[type];
+          if (!entries || !entries.length) return;
+
+          var group = document.createElement('section');
+          group.className = 'provider-group';
+
+          var heading = document.createElement('h2');
+          heading.className = 'provider-heading';
+          heading.appendChild(document.createTextNode(providerTypeLabel(type)));
+          var count = document.createElement('span');
+          count.className = 'provider-count';
+          count.textContent = String(entries.length);
+          heading.appendChild(count);
+          group.appendChild(heading);
+
+          var list = document.createElement('div');
+          list.className = 'provider-list';
+          entries.forEach(function (entry) {
+            var card = document.createElement('label');
+            card.className = 'provider-card';
+            card.setAttribute('data-index', String(entry.index));
+
+            var radio = document.createElement('input');
+            radio.type = 'radio';
+            radio.name = 'provider';
+            radio.addEventListener('change', function () { chooseProvider(entry.index); });
+
+            var copy = document.createElement('span');
+            var name = document.createElement('span');
+            name.className = 'provider-name';
+            name.textContent = entry.provider.name;
+            var location = document.createElement('span');
+            location.className = 'provider-location';
+            location.textContent = providerMeta(entry.provider);
+            copy.appendChild(name);
+            copy.appendChild(document.createElement('br'));
+            copy.appendChild(location);
+
+            var device = document.createElement('span');
+            device.className = 'provider-device';
+            device.textContent = providerDeviceLabel(entry.provider);
+
+            card.appendChild(radio);
+            card.appendChild(copy);
+            card.appendChild(device);
+            card.addEventListener('click', function () { chooseProvider(entry.index); });
+            list.appendChild(card);
+          });
+          group.appendChild(list);
+          providerGroups.appendChild(group);
+        });
+        results.style.display = 'block';
+      }
+
+      form.addEventListener('submit', function (event) {
+        event.preventDefault();
+        var postal = postalCode.value.trim().toUpperCase();
+        if (!postal) return;
+
+        setMessage('Looking up lineups and channel counts for ' + postal + '…');
+        searchButton.disabled = true;
+        results.style.display = 'none';
+        providers = [];
+
+        var query = new URLSearchParams({
+          country: country.value,
+          postalCode: postal,
+          language: language
+        });
+        fetch('/api/setup/providers?' + query.toString(), { cache: 'no-store' })
+          .then(function (response) {
+            if (!response.ok) {
+              return response.text().then(function (text) { throw new Error(text.trim() || 'Lookup failed'); });
+            }
+            return response.json();
+          })
+          .then(function (data) {
+            providers = data.Providers || [];
+            if (!providers.length) {
+              setMessage('No lineups were found for that area. Check the postal code and try again.', 'error');
+              return;
+            }
+            setMessage(providers.length + ' lineup' + (providers.length === 1 ? '' : 's') + ' found.');
+            renderProviders();
+          })
+          .catch(function (error) {
+            setMessage(error.message || 'Unable to retrieve lineups from Gracenote.', 'error');
+          })
+          .finally(function () { searchButton.disabled = false; });
+      });
+
+      saveButton.addEventListener('click', function () {
+        if (selectedIndex < 0 || !providers[selectedIndex]) return;
+        saveButton.disabled = true;
+        setMessage('Saving lineup and preparing a fresh guide…');
+
+        fetch('/api/setup/provider', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            country: country.value,
+            postalCode: postalCode.value.trim().toUpperCase(),
+            language: language,
+            provider: providers[selectedIndex]
+          })
+        })
+          .then(function (response) {
+            if (!response.ok) {
+              return response.text().then(function (text) { throw new Error(text.trim() || 'Save failed'); });
+            }
+            return response.json();
+          })
+          .then(function (data) {
+            showConfigured(data.provider);
+            results.style.display = 'none';
+            setMessage('');
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+          })
+          .catch(function (error) {
+            setMessage(error.message || 'Unable to save this lineup.', 'error');
+          })
+          .finally(function () { saveButton.disabled = false; });
+      });
+
+      changeButton.addEventListener('click', function () {
+        chooserPanel.style.display = 'block';
+        results.style.display = 'none';
+        setMessage('Choose another lineup. Your current lineup remains active until you save a replacement.');
+        window.scrollTo({ top: chooserPanel.offsetTop - 20, behavior: 'smooth' });
+        postalCode.focus();
+      });
+
+      loadCurrentConfig();
+    }());
+  </script>
+</body>
+</html>
