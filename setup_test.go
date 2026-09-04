@@ -152,7 +152,7 @@ func TestSetupPageIsEmbedded(t *testing.T) {
 	if !strings.Contains(body, "GraceNoteScraper setup") {
 		t.Fatal("setup page marker not found")
 	}
-	for _, expected := range []string{`id="changeButton"`, `id="guideStatus"`, `id="chooserPanel"`, "channelCountKnown"} {
+	for _, expected := range []string{`id="changeButton"`, `id="guideStatus"`, `id="chooserPanel"`, `id="xmltvGuideLink"`, `id="xmltvCopyStatus"`, "XMLTV guide URL", "new URL('/xmlguide.xmltv', window.location.href)", "navigator.clipboard.writeText(xmltvGuideURL)", "channelCountKnown"} {
 		if !strings.Contains(body, expected) {
 			t.Fatalf("setup page is missing %q", expected)
 		}

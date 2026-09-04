@@ -132,8 +132,35 @@
       text-transform: uppercase;
     }
 
+    .current-copy { min-width: 0; }
     .current-name { font-weight: 750; }
     .current-meta { margin-top: 4px; color: var(--muted); font-size: 13px; }
+    .xmltv-url { display: grid; gap: 3px; margin-top: 12px; }
+    .xmltv-url-label {
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+    }
+    .xmltv-url-link {
+      justify-self: start;
+      min-height: 0;
+      padding: 0;
+      border: 0;
+      border-radius: 0;
+      background: transparent;
+      color: var(--accent);
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 13px;
+      overflow-wrap: anywhere;
+      text-align: left;
+      text-underline-offset: 3px;
+    }
+    .xmltv-url-link:hover { background: transparent; color: var(--text); text-decoration: underline; }
+    .xmltv-copy-status { min-height: 1.2em; color: var(--muted); font-size: 12px; }
+    .xmltv-copy-status.success { color: var(--accent); }
+    .xmltv-copy-status.error { color: var(--danger); }
     .current-actions { display: flex; align-items: center; gap: 9px; }
 
     .secondary-button {
@@ -366,10 +393,15 @@
     </section>
 
     <section class="current" id="currentCard" aria-live="polite">
-      <div>
+      <div class="current-copy">
         <div class="current-label">Current lineup</div>
         <div class="current-name" id="currentName"></div>
         <div class="current-meta" id="currentMeta"></div>
+        <div class="xmltv-url">
+          <span class="xmltv-url-label">XMLTV guide URL</span>
+          <button class="xmltv-url-link" id="xmltvGuideLink" type="button" title="Copy XMLTV guide URL"></button>
+          <span class="xmltv-copy-status" id="xmltvCopyStatus" aria-live="polite"></span>
+        </div>
       </div>
       <div class="current-actions">
         <button class="secondary-button" id="changeButton" type="button">Change lineup</button>
@@ -423,6 +455,8 @@
       var currentCard = document.getElementById('currentCard');
       var currentName = document.getElementById('currentName');
       var currentMeta = document.getElementById('currentMeta');
+      var xmltvGuideLink = document.getElementById('xmltvGuideLink');
+      var xmltvCopyStatus = document.getElementById('xmltvCopyStatus');
       var changeButton = document.getElementById('changeButton');
       var chooserPanel = document.getElementById('chooserPanel');
       var guideStatus = document.getElementById('guideStatus');
@@ -447,6 +481,57 @@
       var language = 'en-us';
       var configured = false;
       var statusTimer = null;
+
+      var xmltvGuideURL = new URL('/xmlguide.xmltv', window.location.href).href;
+      xmltvGuideLink.textContent = xmltvGuideURL;
+
+      function setXMLTVCopyStatus(text, kind) {
+        xmltvCopyStatus.textContent = text;
+        xmltvCopyStatus.className = 'xmltv-copy-status' + (kind ? ' ' + kind : '');
+      }
+
+      function fallbackCopyXMLTVGuideURL() {
+        var input = document.createElement('textarea');
+        input.value = xmltvGuideURL;
+        input.setAttribute('readonly', '');
+        input.style.position = 'fixed';
+        input.style.opacity = '0';
+        document.body.appendChild(input);
+        input.select();
+        var copied = false;
+        try {
+          copied = document.execCommand('copy');
+        } catch (error) {
+          copied = false;
+        }
+        document.body.removeChild(input);
+        if (!copied) throw new Error('Clipboard unavailable');
+      }
+
+      function copyXMLTVGuideURL() {
+        setXMLTVCopyStatus('Copying…');
+        if (navigator.clipboard && window.isSecureContext) {
+          navigator.clipboard.writeText(xmltvGuideURL)
+            .then(function () { setXMLTVCopyStatus('Copied to clipboard.', 'success'); })
+            .catch(function () {
+              try {
+                fallbackCopyXMLTVGuideURL();
+                setXMLTVCopyStatus('Copied to clipboard.', 'success');
+              } catch (error) {
+                setXMLTVCopyStatus('Could not copy automatically. Select and copy the URL manually.', 'error');
+              }
+            });
+          return;
+        }
+        try {
+          fallbackCopyXMLTVGuideURL();
+          setXMLTVCopyStatus('Copied to clipboard.', 'success');
+        } catch (error) {
+          setXMLTVCopyStatus('Could not copy automatically. Select and copy the URL manually.', 'error');
+        }
+      }
+
+      xmltvGuideLink.addEventListener('click', copyXMLTVGuideURL);
 
       function setMessage(text, kind) {
         message.textContent = text || '';
