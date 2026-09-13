@@ -167,11 +167,37 @@ The server includes a built-in retro-styled TV guide web UI at the root URL. If 
 
 ![The Grid](https://gist.githubusercontent.com/daniel-widrick/2c52c4d023ffe75d163b4eff58263c77/raw/demo.gif)
 
+## Using as a Library
+
+The grid download and conversion live in the `scrape` package, so another Go program can fetch a lineup's listings without running the server:
+
+```go
+import (
+    "context"
+    "fmt"
+
+    "github.com/daniel-widrick/GraceNoteScraper/scrape"
+    "github.com/daniel-widrick/GraceNoteScraper/web"
+)
+
+func main() {
+    prefs := web.Preferences{Country: "USA", ZipCode: "13490", Headend: "lineupId", LineupId: "USA-lineupId-DEFAULT", Device: "-", Language: "en-us"}
+    g, err := scrape.Fetch(context.Background(), prefs, scrape.Options{Days: 1})
+    if err != nil {
+        panic(err)
+    }
+    fmt.Printf("%d stations, %d lineup positions, %d programs\n", len(g.Channels), len(g.Lineup), len(g.Programs))
+}
+```
+
+`Fetch` returns a `guide.TVGuide`: `Channels` deduplicated by station, `Lineup` with every position, `Programs`, and `Source`. It pauses five seconds between grid requests by default and skips slots that fail; it returns `scrape.ErrNoData` only when every slot failed. Logo and TMDB enrichment are not part of the package. Lineup discovery by postal code is available through `web.NewProviderClient().FindProviders`.
+
 ## Project Structure
 
 ```
 appconfig/       Persisted non-secret provider configuration
-main.go          Entry point, HTTP server, scraper, image proxy
+main.go          Entry point, HTTP server, enrichment, image proxy
+scrape/          Grid download loop and guide assembly (importable)
 guide/           GraceNote data types and XMLTV conversion
 web/             HTTP client for GraceNote API
 tmdb/            TMDB client and cache

@@ -21,12 +21,14 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"text/template"
 	"time"
 
 	"github.com/daniel-widrick/GraceNoteScraper/appconfig"
 	"github.com/daniel-widrick/GraceNoteScraper/guide"
+	"github.com/daniel-widrick/GraceNoteScraper/scrape"
 	"github.com/daniel-widrick/GraceNoteScraper/tmdb"
 	"github.com/daniel-widrick/GraceNoteScraper/tvlogo"
 	"github.com/daniel-widrick/GraceNoteScraper/util"
@@ -276,70 +278,32 @@ func runScrape(pref web.Preferences, tmdbClient *tmdb.Client, baseURL string, ch
 			}
 		}
 	}
-	client := web.NewClient(pref)
 
-	now := time.Now().UTC()
-	midnight := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
-	endTime := midnight.Add(14 * 24 * time.Hour)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	sourceChanged := watchSourceChange(ctx, cancel, sourceCurrent)
 
-	channelMap := make(map[string]guide.Channel)
-	lineupMap := make(map[string]guide.LineupPosition)
-	eventMap := make(map[string]bool)
-	var programs []guide.Program
-
-	totalSlots := int(endTime.Sub(midnight) / (6 * time.Hour))
-	slot := 0
-	for t := midnight; t.Before(endTime); t = t.Add(6 * time.Hour) {
-		if sourceCurrent != nil && !sourceCurrent() {
+	opts := newScrapeOptions(pref)
+	opts.Progress = func(p scrape.Progress) {
+		message := fmt.Sprintf("Downloading guide data (%d of %d)", p.Slot, p.TotalSlots)
+		if p.Phase == scrape.PhaseFetched {
+			message = fmt.Sprintf("Downloaded guide data (%d of %d)", p.Slot, p.TotalSlots)
+		}
+		report(scrapeProgressUpdate{Stage: "gracenote", Message: message, Completed: p.Completed, Total: p.TotalSlots, Channels: p.Channels, Programs: p.Programs})
+	}
+	fetched, err := scrape.Fetch(ctx, pref, opts)
+	if err != nil {
+		if sourceChanged() {
 			return nil, errScrapeSourceChanged
 		}
-		slot++
-		ts := t.Unix()
-		report(scrapeProgressUpdate{Stage: "gracenote", Message: fmt.Sprintf("Downloading guide data (%d of %d)", slot, totalSlots), Completed: slot - 1, Total: totalSlots, Channels: len(channelMap), Programs: len(programs)})
-		log.Printf("Fetching grid %d/%d for time=%d (%s)", slot, totalSlots, ts, t.Format(time.RFC3339))
-
-		grid, err := client.GetDataByTime(ts)
-		if err != nil {
-			log.Printf("Error fetching grid at %d: %v", ts, err)
-			continue
-		}
-
-		for _, ch := range grid.Channels {
-			if _, exists := channelMap[ch.ChannelID]; !exists {
-				channelMap[ch.ChannelID] = guide.ConvertChannel(ch)
-			}
-			position := guide.ConvertLineupPosition(ch)
-			if _, exists := lineupMap[position.Key()]; !exists {
-				lineupMap[position.Key()] = position
-			}
-
-			for _, ev := range ch.Events {
-				dedupKey := ch.ChannelID + "|" + ev.StartTime + "|" + ev.EndTime
-				if eventMap[dedupKey] {
-					continue
-				}
-				eventMap[dedupKey] = true
-				programs = append(programs, guide.ConvertEvent(ev, ch.ChannelID, pref.Language, pref.Country))
-			}
-		}
-
-		log.Printf("Channels so far: %d, Events so far: %d", len(channelMap), len(programs))
-		report(scrapeProgressUpdate{Stage: "gracenote", Message: fmt.Sprintf("Downloaded guide data (%d of %d)", slot, totalSlots), Completed: slot, Total: totalSlots, Channels: len(channelMap), Programs: len(programs)})
-
-		if t.Add(6 * time.Hour).Before(endTime) {
-			time.Sleep(5 * time.Second)
-		}
+		return nil, err
 	}
-
-	var channels []guide.Channel
-	for _, ch := range channelMap {
-		channels = append(channels, ch)
+	if sourceChanged() {
+		return nil, errScrapeSourceChanged
 	}
-	lineup := make([]guide.LineupPosition, 0, len(lineupMap))
-	for _, position := range lineupMap {
-		lineup = append(lineup, position)
-	}
-	guide.SortLineup(lineup)
+	channels := fetched.Channels
+	lineup := fetched.Lineup
+	programs := fetched.Programs
 
 	logoClient := tvlogo.NewClient(pref.Country, "tvlogo_cache.json")
 	if logoClient != nil {
@@ -363,7 +327,7 @@ func runScrape(pref web.Preferences, tmdbClient *tmdb.Client, baseURL string, ch
 		Channels: channels,
 		Programs: programs,
 		Lineup:   lineup,
-		Source:   guide.SourceFromPreferences(pref, time.Now().UTC()),
+		Source:   fetched.Source,
 	}
 
 	if channelFilter != nil {
@@ -397,6 +361,52 @@ func renderXMLTV(w io.Writer, tvGuide *guide.TVGuide) error {
 		return fmt.Errorf("failed to execute template: %w", err)
 	}
 	return nil
+}
+
+// newScrapeOptions builds the production scrape configuration. Tests replace
+// it to inject a fake grid fetcher and remove the inter-slot delay.
+var newScrapeOptions = func(pref web.Preferences) scrape.Options {
+	return scrape.Options{Fetcher: web.NewClient(pref)}
+}
+
+// watchSourceChange cancels ctx as soon as sourceCurrent reports false, so a
+// lineup change during the grid download stops the scrape promptly. The
+// returned func reports whether a change has been observed, re-checking live
+// so a change between the last tick and the call is not missed.
+func watchSourceChange(ctx context.Context, cancel context.CancelFunc, sourceCurrent func() bool) func() bool {
+	if sourceCurrent == nil {
+		return func() bool { return false }
+	}
+	var changed atomic.Bool
+	check := func() bool {
+		if changed.Load() {
+			return true
+		}
+		if !sourceCurrent() {
+			changed.Store(true)
+			cancel()
+			return true
+		}
+		return false
+	}
+	if check() {
+		return check
+	}
+	go func() {
+		ticker := time.NewTicker(time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if check() {
+					return
+				}
+			}
+		}
+	}()
+	return check
 }
 
 func persistGuideFiles(tvGuide *guide.TVGuide, sourceFingerprint string) error {
