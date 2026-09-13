@@ -2,6 +2,7 @@
 .env
 config.json
 *.xmltv
+!testdata/xmlguide_golden.xmltv
 tmdb_cache.json
 tvlogo_cache.json
 guide_cache.json

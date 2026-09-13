@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -224,5 +225,23 @@ func TestGuideCacheRequiresMatchingSource(t *testing.T) {
 	got, _, ok := loadGuideCache(time.Hour, "source-one")
 	if !ok || got == nil {
 		t.Fatal("cache did not load for matching source")
+	}
+}
+
+func TestGuideCacheRequiresCurrentSchemaVersion(t *testing.T) {
+	t.Chdir(t.TempDir())
+
+	// A cache written by an older build has no version field.
+	legacy := []byte(`{"saved_at":"` + time.Now().UTC().Format(time.RFC3339) + `","source_fingerprint":"src","guide":{"Channels":[],"Programs":[]}}`)
+	if err := os.WriteFile(guideCachePath, legacy, 0644); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, ok := loadGuideCache(time.Hour, "src"); ok {
+		t.Fatal("legacy cache without a version loaded")
+	}
+
+	saveGuideCache(&guide.TVGuide{}, "src")
+	if _, _, ok := loadGuideCache(time.Hour, "src"); !ok {
+		t.Fatal("current-version cache did not load")
 	}
 }

@@ -118,6 +118,7 @@ A saved `CONFIG_PATH` selection takes precedence over legacy `GN_*` settings. De
 | `POST /api/setup/provider` | Save the selected provider and queue a fresh guide |
 | `GET /xmlguide.xmltv` | XMLTV guide data (point your DVR here) |
 | `GET /api/guide.json` | Guide data as JSON |
+| `GET /api/lineup.json` | Every channel position in the active provider lineup as JSON (see below) |
 | `GET /` | The Grid — built-in web UI |
 | `GET /img?url=...` | Image proxy with local cache |
 | `GET /api/livetv/config` | Returns `{"enabled":true/false}` — whether Jellyfin live TV is configured |
@@ -125,17 +126,80 @@ A saved `CONFIG_PATH` selection takes precedence over legacy `GN_*` settings. De
 | `GET /api/livetv/tune?id=<channelId>` | Starts a live stream for the given channel and returns an HLS URL |
 | `POST /api/livetv/stop` | Forwards a playback-stop notification to Jellyfin to end a live stream |
 
+### Lineup JSON
+
+`/api/lineup.json` describes the provider lineup itself rather than the schedule: one entry per channel number, never collapsed, so a station carried at two numbers appears twice. It returns `503` with a `Retry-After` header until the first guide has been built.
+
+```json
+{
+  "generated": "2026-09-13T04:10:22Z",
+  "source": {
+    "providerName": "Local Over the Air Broadcast",
+    "providerType": "OTA",
+    "location": "",
+    "lineupId": "USA-lineupId-DEFAULT",
+    "headendId": "lineupId",
+    "postalCode": "13490",
+    "country": "USA",
+    "device": "-",
+    "language": "en-us"
+  },
+  "positions": [
+    {
+      "number": "2.1",
+      "stationId": "53158",
+      "placementId": "531580",
+      "callSign": "WKTVDT",
+      "affiliate": "NATIONAL BROADCASTING COMPANY",
+      "affiliateCallSign": "",
+      "filters": ["sports", "news"],
+      "logoUrl": "https://raw.githubusercontent.com/tv-logo/tv-logos/main/countries/united-states/nbc-us.png"
+    }
+  ]
+}
+```
+
+`filters` are Gracenote's own station tags with the `filter-` prefix removed. `placementId` is Gracenote's row identifier and is not stable across scrapes; use `number` plus `stationId` to identify a position. `providerName`, `providerType`, and `location` are filled from the saved setup when it matches the lineup the guide was built from.
+
 ## The Grid
 
 The server includes a built-in retro-styled TV guide web UI at the root URL. If no provider is configured, `/` redirects to `/setup`. Once configured, the guide auto-scrolls through your channel lineup and shows program details, posters, and metadata. Handy for a quick glance at what's on without opening your DVR app.
 
 ![The Grid](https://gist.githubusercontent.com/daniel-widrick/2c52c4d023ffe75d163b4eff58263c77/raw/demo.gif)
 
+## Using as a Library
+
+The grid download and conversion live in the `scrape` package, so another Go program can fetch a lineup's listings without running the server:
+
+```go
+import (
+    "context"
+    "fmt"
+
+    "github.com/daniel-widrick/GraceNoteScraper/scrape"
+    "github.com/daniel-widrick/GraceNoteScraper/web"
+)
+
+func main() {
+    prefs := web.Preferences{Country: "USA", ZipCode: "13490", Headend: "lineupId", LineupId: "USA-lineupId-DEFAULT", Device: "-", Language: "en-us"}
+    g, err := scrape.Fetch(context.Background(), prefs, scrape.Options{Days: 1})
+    if err != nil {
+        panic(err)
+    }
+    fmt.Printf("%d stations, %d lineup positions, %d programs\n", len(g.Channels), len(g.Lineup), len(g.Programs))
+}
+```
+
+`Fetch` returns a `guide.TVGuide`: `Channels` deduplicated by station, `Lineup` with every position, `Programs`, and `Source`. It pauses five seconds between grid requests by default and skips slots that fail; it returns `scrape.ErrNoData` only when every slot failed. Logo and TMDB enrichment are not part of the package. Lineup discovery by postal code is available through `web.NewProviderClient().FindProviders`.
+
+The default grid client is `web.NewClient`, which retries failed requests and keeps a raw-response cache in a `grid_cache/` directory under the working directory. Pass your own `Options.Fetcher` to change that.
+
 ## Project Structure
 
 ```
 appconfig/       Persisted non-secret provider configuration
-main.go          Entry point, HTTP server, scraper, image proxy
+main.go          Entry point, HTTP server, enrichment, image proxy
+scrape/          Grid download loop and guide assembly (importable)
 guide/           GraceNote data types and XMLTV conversion
 web/             HTTP client for GraceNote API
 tmdb/            TMDB client and cache

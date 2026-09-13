@@ -32,12 +32,17 @@ type GridResponse struct {
 }
 
 type JSONChannel struct {
-	ChannelID     string      `json:"channelId"`
-	ChannelNo     string      `json:"channelNo"`
-	CallSign      string      `json:"callSign"`
-	AffiliateName string      `json:"affiliateName"`
-	Thumbnail     string      `json:"thumbnail"`
-	Events        []JSONEvent `json:"events"`
+	ChannelID string `json:"channelId"`
+	// ID is the station ID with the row index appended. It identifies a row
+	// within one response, not a stable lineup placement.
+	ID                string      `json:"id"`
+	ChannelNo         string      `json:"channelNo"`
+	CallSign          string      `json:"callSign"`
+	AffiliateName     string      `json:"affiliateName"`
+	AffiliateCallSign string      `json:"affiliateCallSign"`
+	StationFilters    []string    `json:"stationFilters"`
+	Thumbnail         string      `json:"thumbnail"`
+	Events            []JSONEvent `json:"events"`
 }
 
 type JSONEvent struct {
@@ -54,12 +59,15 @@ type JSONEvent struct {
 }
 
 type JSONProgram struct {
-	ID           string  `json:"id"`
-	Title        string  `json:"title"`
-	EpisodeTitle *string `json:"episodeTitle"`
-	ShortDesc    *string `json:"shortDesc"`
-	Season       *string `json:"season"`
-	Episode      *string `json:"episode"`
+	ID           string     `json:"id"`
+	TmsID        string     `json:"tmsId"`
+	Title        string     `json:"title"`
+	EpisodeTitle *string    `json:"episodeTitle"`
+	ShortDesc    *string    `json:"shortDesc"`
+	Season       *string    `json:"season"`
+	Episode      *string    `json:"episode"`
+	ReleaseYear  FlexString `json:"releaseYear"`
+	IsGeneric    FlexBool   `json:"isGeneric"`
 }
 
 type Preferences struct {
