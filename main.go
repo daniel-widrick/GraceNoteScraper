@@ -145,25 +145,13 @@ func guideToJSON(g *guide.TVGuide) APIGuide {
 
 	// Sort channels by number (numeric sort)
 	sort.Slice(channels, func(i, j int) bool {
-		return channelNumberLess(channels[i].Number, channels[j].Number)
+		return guide.ChannelNumberLess(channels[i].Number, channels[j].Number)
 	})
 
 	return APIGuide{
 		Generated: time.Now().UTC().Format(time.RFC3339),
 		Channels:  channels,
 	}
-}
-
-// channelNumberLess compares channel numbers numerically where possible.
-func channelNumberLess(a, b string) bool {
-	// Try to parse as float for numeric comparison (handles "5.1", "12", etc.)
-	var ai, bi float64
-	_, errA := fmt.Sscanf(a, "%f", &ai)
-	_, errB := fmt.Sscanf(b, "%f", &bi)
-	if errA == nil && errB == nil {
-		return ai < bi
-	}
-	return a < b
 }
 
 // xmltvTimeToISO converts "20250225200000 +0000" → "2025-02-25T20:00:00Z"
@@ -214,6 +202,7 @@ func runScrape(pref web.Preferences, tmdbClient *tmdb.Client, baseURL string, ch
 	endTime := midnight.Add(14 * 24 * time.Hour)
 
 	channelMap := make(map[string]guide.Channel)
+	lineupMap := make(map[string]guide.LineupPosition)
 	eventMap := make(map[string]bool)
 	var programs []guide.Program
 
@@ -238,6 +227,10 @@ func runScrape(pref web.Preferences, tmdbClient *tmdb.Client, baseURL string, ch
 			if _, exists := channelMap[ch.ChannelID]; !exists {
 				channelMap[ch.ChannelID] = guide.ConvertChannel(ch)
 			}
+			position := guide.ConvertLineupPosition(ch)
+			if _, exists := lineupMap[position.Key()]; !exists {
+				lineupMap[position.Key()] = position
+			}
 
 			for _, ev := range ch.Events {
 				dedupKey := ch.ChannelID + "|" + ev.StartTime + "|" + ev.EndTime
@@ -261,6 +254,11 @@ func runScrape(pref web.Preferences, tmdbClient *tmdb.Client, baseURL string, ch
 	for _, ch := range channelMap {
 		channels = append(channels, ch)
 	}
+	lineup := make([]guide.LineupPosition, 0, len(lineupMap))
+	for _, position := range lineupMap {
+		lineup = append(lineup, position)
+	}
+	guide.SortLineup(lineup)
 
 	logoClient := tvlogo.NewClient(pref.Country, "tvlogo_cache.json")
 	if logoClient != nil {
@@ -268,6 +266,7 @@ func runScrape(pref web.Preferences, tmdbClient *tmdb.Client, baseURL string, ch
 	}
 	report(scrapeProgressUpdate{Stage: "logos", Message: "Matching channel logos", Channels: len(channels), Programs: len(programs)})
 	enrichChannelIcons(logoClient, channels)
+	propagateChannelLogos(channels, lineup)
 	enrichProgramThumbnails(tmdbClient, programs, func(completed, total int) {
 		report(scrapeProgressUpdate{Stage: "tmdb", Message: fmt.Sprintf("Enriching program titles (%d of %d)", completed, total), Completed: completed, Total: total, Channels: len(channels), Programs: len(programs)})
 	})
@@ -275,28 +274,15 @@ func runScrape(pref web.Preferences, tmdbClient *tmdb.Client, baseURL string, ch
 
 	// Rewrite image URLs to go through the local proxy
 	if baseURL != "" {
-		proxy := strings.TrimRight(baseURL, "/") + "/img?url="
-		for i := range channels {
-			if channels[i].IconURL != "" {
-				channels[i].IconURL = proxy + neturl.QueryEscape(channels[i].IconURL)
-			}
-		}
-		for i := range programs {
-			if programs[i].IconSrc != "" {
-				programs[i].IconSrc = proxy + neturl.QueryEscape(programs[i].IconSrc)
-			}
-			for j := range programs[i].Images {
-				if programs[i].Images[j].URL != "" {
-					programs[i].Images[j].URL = proxy + neturl.QueryEscape(programs[i].Images[j].URL)
-				}
-			}
-		}
+		rewriteImageURLs(baseURL, channels, lineup, programs)
 		log.Printf("Rewrote image URLs with base %s", baseURL)
 	}
 
 	tvGuide := &guide.TVGuide{
 		Channels: channels,
 		Programs: programs,
+		Lineup:   lineup,
+		Source:   guide.SourceFromPreferences(pref, time.Now().UTC()),
 	}
 
 	if channelFilter != nil {
@@ -974,9 +960,18 @@ func filterGuideChannels(g *guide.TVGuide, allowed map[string]bool) *guide.TVGui
 		}
 	}
 
+	var lineup []guide.LineupPosition
+	for _, position := range g.Lineup {
+		if allowed[position.ChannelNo] {
+			lineup = append(lineup, position)
+		}
+	}
+
 	return &guide.TVGuide{
 		Channels: channels,
 		Programs: programs,
+		Lineup:   lineup,
+		Source:   g.Source,
 	}
 }
 
@@ -1289,6 +1284,43 @@ func fixDeadImageURLs(programs []guide.Program) {
 
 // resolves channel logos from the tv-logo/tv-logos repo,
 // replacing dead Gracenote icon URLs with verified GitHub-hosted PNGs.
+// rewriteImageURLs routes every image URL through the local /img proxy.
+func rewriteImageURLs(baseURL string, channels []guide.Channel, lineup []guide.LineupPosition, programs []guide.Program) {
+	proxy := strings.TrimRight(baseURL, "/") + "/img?url="
+	rewrite := func(u string) string {
+		if u == "" {
+			return ""
+		}
+		return proxy + neturl.QueryEscape(u)
+	}
+	for i := range channels {
+		channels[i].IconURL = rewrite(channels[i].IconURL)
+	}
+	for i := range lineup {
+		lineup[i].LogoURL = rewrite(lineup[i].LogoURL)
+	}
+	for i := range programs {
+		programs[i].IconSrc = rewrite(programs[i].IconSrc)
+		for j := range programs[i].Images {
+			programs[i].Images[j].URL = rewrite(programs[i].Images[j].URL)
+		}
+	}
+}
+
+// propagateChannelLogos copies each station's resolved icon onto every lineup
+// position carrying that station, so logo resolution stays keyed by station.
+func propagateChannelLogos(channels []guide.Channel, lineup []guide.LineupPosition) {
+	byStation := make(map[string]string, len(channels))
+	for _, ch := range channels {
+		byStation[ch.ID] = ch.IconURL
+	}
+	for i := range lineup {
+		if logo, ok := byStation[lineup[i].StationID]; ok {
+			lineup[i].LogoURL = logo
+		}
+	}
+}
+
 func enrichChannelIcons(client *tvlogo.Client, channels []guide.Channel) {
 	if client == nil {
 		return

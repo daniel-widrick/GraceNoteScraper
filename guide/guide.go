@@ -2,16 +2,112 @@ package guide
 
 import (
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
+	"time"
 	"unicode"
 
 	"github.com/daniel-widrick/GraceNoteScraper/web"
 )
 
 type TVGuide struct {
+	// Channels is the XMLTV view: one entry per Gracenote station.
 	Channels []Channel
 	Programs []Program
+	// Lineup retains every provider position, so a station carried at two
+	// channel numbers appears twice. It is never collapsed.
+	Lineup []LineupPosition
+	// Source records which provider lineup produced this guide.
+	Source Source
+}
+
+// Source identifies the Gracenote lineup a guide was built from.
+type Source struct {
+	Country     string
+	PostalCode  string
+	HeadendID   string
+	LineupID    string
+	Device      string
+	Language    string
+	GeneratedAt time.Time
+}
+
+// SourceFromPreferences copies the request preferences into a Source.
+func SourceFromPreferences(p web.Preferences, generatedAt time.Time) Source {
+	return Source{
+		Country:     p.Country,
+		PostalCode:  p.ZipCode,
+		HeadendID:   p.Headend,
+		LineupID:    p.LineupId,
+		Device:      p.Device,
+		Language:    p.Language,
+		GeneratedAt: generatedAt,
+	}
+}
+
+// LineupPosition is one channel number in a provider lineup.
+type LineupPosition struct {
+	ChannelNo         string
+	StationID         string
+	PlacementID       string // Gracenote row id; carried for fidelity, not a stable key
+	CallSign          string
+	Affiliate         string
+	AffiliateCallSign string
+	Filters           []string
+	LogoURL           string
+}
+
+// Key identifies a position across grid slices: the same station at the same
+// number is one position no matter how many responses it appears in.
+func (p LineupPosition) Key() string {
+	return p.ChannelNo + "|" + p.StationID
+}
+
+// ConvertLineupPosition converts a JSON channel row to a lineup position.
+func ConvertLineupPosition(ch web.JSONChannel) LineupPosition {
+	return LineupPosition{
+		ChannelNo:         ch.ChannelNo,
+		StationID:         ch.ChannelID,
+		PlacementID:       ch.ID,
+		CallSign:          ch.CallSign,
+		Affiliate:         ch.AffiliateName,
+		AffiliateCallSign: normalizeNull(ch.AffiliateCallSign),
+		Filters:           stripFilterPrefixes(ch.StationFilters),
+		LogoURL:           gracenoteIconURL(ch.Thumbnail),
+	}
+}
+
+// ChannelNumberLess orders channel numbers numerically where both parse
+// (so "2.1" < "10" < "100"), places numeric numbers before non-numeric ones,
+// and falls back to string order. Equal numbers compare as strings so the
+// ordering is strict.
+func ChannelNumberLess(a, b string) bool {
+	af, errA := strconv.ParseFloat(strings.TrimSpace(a), 64)
+	bf, errB := strconv.ParseFloat(strings.TrimSpace(b), 64)
+	switch {
+	case errA == nil && errB == nil:
+		if af != bf {
+			return af < bf
+		}
+		return a < b
+	case errA == nil:
+		return true
+	case errB == nil:
+		return false
+	default:
+		return a < b
+	}
+}
+
+// SortLineup orders positions by channel number, then station ID, in place.
+func SortLineup(positions []LineupPosition) {
+	sort.SliceStable(positions, func(i, j int) bool {
+		if positions[i].ChannelNo != positions[j].ChannelNo {
+			return ChannelNumberLess(positions[i].ChannelNo, positions[j].ChannelNo)
+		}
+		return positions[i].StationID < positions[j].StationID
+	})
 }
 
 type Channel struct {
@@ -102,21 +198,26 @@ func formatXMLTVTime(iso string) string {
 	return s
 }
 
+// gracenoteIconURL builds an absolute icon URL from a Gracenote thumbnail
+// path: strip leading slashes, strip query params, prepend http://
+func gracenoteIconURL(thumbnail string) string {
+	if thumbnail == "" {
+		return ""
+	}
+	raw := thumbnail
+	if idx := strings.Index(raw, "?"); idx >= 0 {
+		raw = raw[:idx]
+	}
+	raw = strings.TrimLeft(raw, "/")
+	if raw == "" {
+		return ""
+	}
+	return "http://" + raw
+}
+
 // converts a JSON channel to a template Channel struct.
 func ConvertChannel(ch web.JSONChannel) Channel {
-	// Build icon URL: strip leading slashes, strip query params, prepend http://
-	iconURL := ""
-	if ch.Thumbnail != "" {
-		raw := ch.Thumbnail
-		// Strip query string
-		if idx := strings.Index(raw, "?"); idx >= 0 {
-			raw = raw[:idx]
-		}
-		raw = strings.TrimLeft(raw, "/")
-		if raw != "" {
-			iconURL = "http://" + raw
-		}
-	}
+	iconURL := gracenoteIconURL(ch.Thumbnail)
 
 	return Channel{
 		ID: ch.ChannelID,
