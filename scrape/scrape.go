@@ -1,6 +1,7 @@
 // Package scrape fetches a Gracenote lineup's listings and converts them into
-// a guide.TVGuide. It performs no enrichment, file I/O, or environment reads,
-// so it can be imported by other programs.
+// a guide.TVGuide. It performs no enrichment or environment reads, so it can
+// be imported by other programs. The default fetcher, web.NewClient, keeps its
+// own raw-response cache in ./grid_cache; supply Options.Fetcher to avoid it.
 package scrape
 
 import (

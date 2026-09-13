@@ -192,6 +192,8 @@ func main() {
 
 `Fetch` returns a `guide.TVGuide`: `Channels` deduplicated by station, `Lineup` with every position, `Programs`, and `Source`. It pauses five seconds between grid requests by default and skips slots that fail; it returns `scrape.ErrNoData` only when every slot failed. Logo and TMDB enrichment are not part of the package. Lineup discovery by postal code is available through `web.NewProviderClient().FindProviders`.
 
+The default grid client is `web.NewClient`, which retries failed requests and keeps a raw-response cache in a `grid_cache/` directory under the working directory. Pass your own `Options.Fetcher` to change that.
+
 ## Project Structure
 
 ```

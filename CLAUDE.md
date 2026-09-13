@@ -27,7 +27,7 @@ Run `go test ./...` for the setup, configuration, and provider-client tests.
 
 ## Architecture
 
-The binary is a single Go process that scrapes GraceNote/TMS for 14 days of TV listings and serves the data as XMLTV over HTTP. The grid download loop and guide assembly live in `scrape/` (`scrape.Fetch`), which is importable by other programs and does no enrichment, file I/O, or env reads. Enrichment, persistence, and runtime orchestration live in `main.go`; setup handlers live in `setup.go` and persisted configuration lives in `appconfig/`.
+The binary is a single Go process that scrapes GraceNote/TMS for 14 days of TV listings and serves the data as XMLTV over HTTP. The grid download loop and guide assembly live in `scrape/` (`scrape.Fetch`), which is importable by other programs and does no enrichment or env reads (the default `web.Client` it uses does keep `grid_cache/` on disk). Enrichment, persistence, and runtime orchestration live in `main.go`; setup handlers live in `setup.go` and persisted configuration lives in `appconfig/`.
 
 **Data flow:**
 
