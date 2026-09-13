@@ -87,6 +87,37 @@ type APIProgram struct {
 	Description string `json:"description,omitempty"`
 }
 
+// APILineup is the response shape of /api/lineup.json: every provider
+// position for the active lineup, plus the source it came from.
+type APILineup struct {
+	Generated string              `json:"generated"`
+	Source    APILineupSource     `json:"source"`
+	Positions []APILineupPosition `json:"positions"`
+}
+
+type APILineupSource struct {
+	ProviderName string `json:"providerName"`
+	ProviderType string `json:"providerType"`
+	Location     string `json:"location"`
+	LineupID     string `json:"lineupId"`
+	HeadendID    string `json:"headendId"`
+	PostalCode   string `json:"postalCode"`
+	Country      string `json:"country"`
+	Device       string `json:"device"`
+	Language     string `json:"language"`
+}
+
+type APILineupPosition struct {
+	Number            string   `json:"number"`
+	StationID         string   `json:"stationId"`
+	PlacementID       string   `json:"placementId"`
+	CallSign          string   `json:"callSign"`
+	Affiliate         string   `json:"affiliate"`
+	AffiliateCallSign string   `json:"affiliateCallSign"`
+	Filters           []string `json:"filters,omitempty"`
+	LogoURL           string   `json:"logoUrl"`
+}
+
 // ---------- Conversion ----------
 
 // guideToJSON converts a TVGuide into the simplified JSON API format.
@@ -152,6 +183,56 @@ func guideToJSON(g *guide.TVGuide) APIGuide {
 		Generated: time.Now().UTC().Format(time.RFC3339),
 		Channels:  channels,
 	}
+}
+
+// lineupToJSON converts a guide's lineup into the API shape. Provider naming
+// comes from the saved configuration only when it describes the same source
+// the guide was built from.
+func lineupToJSON(g *guide.TVGuide, config appconfig.Config, configured bool) APILineup {
+	positions := make([]guide.LineupPosition, len(g.Lineup))
+	copy(positions, g.Lineup)
+	guide.SortLineup(positions)
+
+	out := APILineup{
+		Generated: g.Source.GeneratedAt.UTC().Format(time.RFC3339),
+		Source: APILineupSource{
+			LineupID:   g.Source.LineupID,
+			HeadendID:  g.Source.HeadendID,
+			PostalCode: g.Source.PostalCode,
+			Country:    g.Source.Country,
+			Device:     g.Source.Device,
+			Language:   g.Source.Language,
+		},
+		Positions: make([]APILineupPosition, 0, len(positions)),
+	}
+	if g.Source.GeneratedAt.IsZero() {
+		out.Generated = time.Now().UTC().Format(time.RFC3339)
+	}
+	if configured && sourceMatchesConfig(g.Source, config) {
+		out.Source.ProviderName = config.Gracenote.ProviderName
+		out.Source.ProviderType = config.Gracenote.ProviderType
+		out.Source.Location = config.Gracenote.Location
+	}
+	for _, p := range positions {
+		out.Positions = append(out.Positions, APILineupPosition{
+			Number:            p.ChannelNo,
+			StationID:         p.StationID,
+			PlacementID:       p.PlacementID,
+			CallSign:          p.CallSign,
+			Affiliate:         p.Affiliate,
+			AffiliateCallSign: p.AffiliateCallSign,
+			Filters:           p.Filters,
+			LogoURL:           p.LogoURL,
+		})
+	}
+	return out
+}
+
+// sourceMatchesConfig reports whether a guide was built from the configured lineup.
+func sourceMatchesConfig(src guide.Source, config appconfig.Config) bool {
+	p := config.Preferences()
+	return src.LineupID == p.LineupId && src.HeadendID == p.Headend && src.PostalCode == p.ZipCode &&
+		src.Country == p.Country && src.Device == p.Device && src.Language == p.Language
 }
 
 // xmltvTimeToISO converts "20250225200000 +0000" → "2025-02-25T20:00:00Z"
@@ -604,6 +685,24 @@ func handleGuideJSON(state *GuideState) http.HandlerFunc {
 		enc := json.NewEncoder(w)
 		enc.SetEscapeHTML(false)
 		enc.Encode(apiGuide)
+	}
+}
+
+func handleLineupJSON(state *GuideState, store *appconfig.Store) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		g := state.Get()
+		if g == nil {
+			w.Header().Set("Retry-After", "30")
+			http.Error(w, "Guide is being generated", http.StatusServiceUnavailable)
+			return
+		}
+
+		config, configured, _ := store.Get()
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		enc := json.NewEncoder(w)
+		enc.SetEscapeHTML(false)
+		enc.Encode(lineupToJSON(g, config, configured))
 	}
 }
 
@@ -1115,6 +1214,7 @@ func main() {
 	mux.HandleFunc("/api/setup/status", setupHandlers.handleScrapeStatus)
 	mux.HandleFunc("/xmlguide.xmltv", handleXMLTV(state))
 	mux.HandleFunc("/api/guide.json", handleGuideJSON(state))
+	mux.HandleFunc("/api/lineup.json", handleLineupJSON(state, configStore))
 	mux.HandleFunc("/img", handleImage)
 	mux.HandleFunc("/api/livetv/config", handleLiveTVConfig(jellyfinURL, jellyfinAPIKey))
 	if jellyfinURL != "" && jellyfinAPIKey != "" {
