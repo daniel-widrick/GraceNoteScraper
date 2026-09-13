@@ -1,0 +1,380 @@
+{
+  "channels": [
+    {
+      "affiliateCallSign": "null",
+      "affiliateName": "NATIONAL BROADCASTING COMPANY",
+      "callSign": "WKTVDT",
+      "channelId": "53158",
+      "channelNo": "2.1",
+      "events": [
+        {
+          "callSign": "WKTVDT",
+          "channelNo": "2.1",
+          "duration": "210",
+          "endTime": "2026-09-13T03:00:00Z",
+          "filter": [
+            "filter-sports"
+          ],
+          "flag": [
+            "Live",
+            "New"
+          ],
+          "program": {
+            "episode": null,
+            "episodeTitle": "Iowa State at Iowa",
+            "id": "EP062700990343",
+            "isGeneric": "0",
+            "releaseYear": 2019,
+            "season": null,
+            "seriesId": "SH06270099",
+            "shortDesc": "The Iowa State Cyclones take on the No. 21 Iowa Hawkeyes at ",
+            "title": "College Football",
+            "tmsId": "EP062700990343"
+          },
+          "rating": null,
+          "seriesId": "SH06270099",
+          "startTime": "2026-09-12T23:30:00Z",
+          "tags": [
+            "CC"
+          ],
+          "thumbnail": "p53158_placeholder"
+        },
+        {
+          "callSign": "WKTVDT",
+          "channelNo": "2.1",
+          "duration": "29",
+          "endTime": "2026-09-13T03:29:00Z",
+          "filter": [
+            "filter-news"
+          ],
+          "flag": [
+            "New"
+          ],
+          "program": {
+            "episode": null,
+            "episodeTitle": null,
+            "id": "SH007933000000",
+            "isGeneric": "0",
+            "releaseYear": "2021",
+            "season": null,
+            "seriesId": "SH00793300",
+            "shortDesc": "Stay informed with the latest breaking news and headlines.",
+            "title": "NewsChannel 2 at 11",
+            "tmsId": "SH007933000000"
+          },
+          "rating": null,
+          "seriesId": "SH00793300",
+          "startTime": "2026-09-13T03:00:00Z",
+          "tags": [
+            "CC"
+          ],
+          "thumbnail": "p53158_placeholder"
+        },
+        {
+          "callSign": "WKTVDT",
+          "channelNo": "2.1",
+          "duration": "94",
+          "endTime": "2026-09-13T05:03:00Z",
+          "filter": [],
+          "flag": [],
+          "program": {
+            "episode": "14",
+            "episodeTitle": "Ryan Gosling; Gorillaz",
+            "id": "EP000037101609",
+            "isGeneric": "0",
+            "releaseYear": null,
+            "season": "51",
+            "seriesId": "SH00003710",
+            "shortDesc": "Host Ryan Gosling; Gorillaz perform.",
+            "title": "Saturday Night Live",
+            "tmsId": "EP000037101609"
+          },
+          "rating": "TV-14",
+          "seriesId": "SH00003710",
+          "startTime": "2026-09-13T03:29:00Z",
+          "tags": [
+            "Stereo",
+            "CC"
+          ],
+          "thumbnail": "p53158_placeholder"
+        }
+      ],
+      "id": "531580",
+      "stationFilters": [
+        "filter-sports",
+        "filter-news"
+      ],
+      "stationGenres": [
+        false
+      ],
+      "thumbnail": "//images.example.invalid/station/53158.png?w=55"
+    },
+    {
+      "affiliateCallSign": "null",
+      "affiliateName": "BOUNCE TV",
+      "callSign": "WSYRDT3",
+      "channelId": "84540",
+      "channelNo": "9.3",
+      "events": [
+        {
+          "callSign": "WSYRDT3",
+          "channelNo": "9.3",
+          "duration": "150",
+          "endTime": "2026-09-13T01:30:00Z",
+          "filter": [
+            "filter-movie"
+          ],
+          "flag": [],
+          "program": {
+            "episode": null,
+            "episodeTitle": null,
+            "id": "MV015399200000",
+            "isGeneric": "1",
+            "releaseYear": "2021",
+            "season": null,
+            "seriesId": "MV01539920",
+            "shortDesc": "Rescued as a child by the legendary assassin Moody, Anna is ",
+            "title": "The Prot\u00e9g\u00e9",
+            "tmsId": "MV015399200000"
+          },
+          "rating": "TV-14",
+          "seriesId": "MV01539920",
+          "startTime": "2026-09-12T23:00:00Z",
+          "tags": [
+            "CC"
+          ],
+          "thumbnail": "p84540_placeholder"
+        },
+        {
+          "callSign": "WSYRDT3",
+          "channelNo": "9.3",
+          "duration": "120",
+          "endTime": "2026-09-13T03:30:00Z",
+          "filter": [
+            "filter-movie"
+          ],
+          "flag": [],
+          "program": {
+            "episode": null,
+            "episodeTitle": null,
+            "id": "MV002273030000",
+            "isGeneric": 0,
+            "releaseYear": "2009",
+            "season": null,
+            "seriesId": "MV00227303",
+            "shortDesc": "A rogue (Rain) enlists the help of the Europol agent (Naomie",
+            "title": "Ninja Assassin",
+            "tmsId": "MV002273030000"
+          },
+          "rating": "TV-14",
+          "seriesId": "MV00227303",
+          "startTime": "2026-09-13T01:30:00Z",
+          "tags": [
+            "CC"
+          ],
+          "thumbnail": "p84540_placeholder"
+        },
+        {
+          "callSign": "WSYRDT3",
+          "channelNo": "9.3",
+          "duration": "120",
+          "endTime": "2026-09-13T05:30:00Z",
+          "filter": [
+            "filter-movie"
+          ],
+          "flag": [],
+          "program": {
+            "episode": null,
+            "episodeTitle": null,
+            "id": "MV003756000000",
+            "isGeneric": "0",
+            "releaseYear": "2012",
+            "season": null,
+            "seriesId": "MV00375600",
+            "shortDesc": "After his partner is killed, a veteran hit man (Sylvester St",
+            "title": "Bullet to the Head",
+            "tmsId": "MV003756000000"
+          },
+          "rating": "TV-14",
+          "seriesId": "MV00375600",
+          "startTime": "2026-09-13T03:30:00Z",
+          "tags": [
+            "CC"
+          ],
+          "thumbnail": "p84540_placeholder"
+        }
+      ],
+      "id": "8454012",
+      "stationFilters": [
+        "filter-movie"
+      ],
+      "stationGenres": [
+        false
+      ],
+      "thumbnail": "//images.example.invalid/station/84540.png?w=55"
+    },
+    {
+      "affiliateCallSign": "null",
+      "affiliateName": "PBS KIDS HD",
+      "callSign": "WCNYDT4",
+      "channelId": "49216",
+      "channelNo": "24.4",
+      "events": [
+        {
+          "callSign": "WCNYDT4",
+          "channelNo": "24.4",
+          "duration": "30",
+          "endTime": "2026-09-13T00:30:00Z",
+          "filter": [
+            "filter-family"
+          ],
+          "flag": [
+            "New",
+            "Finale"
+          ],
+          "program": {
+            "episode": "30",
+            "episodeTitle": "The Square Dance; The Process",
+            "id": "EP052844640100",
+            "isGeneric": "0",
+            "releaseYear": null,
+            "season": "1",
+            "seriesId": "SH05284464",
+            "shortDesc": "Dylan realizes he doesn't love square-dancing; Carl teaches ",
+            "title": "Carl the Collector",
+            "tmsId": "EP052844640100"
+          },
+          "rating": "TV-Y",
+          "seriesId": "SH05284464",
+          "startTime": "2026-09-13T00:00:00Z",
+          "tags": [
+            "Stereo",
+            "CC"
+          ],
+          "thumbnail": "p49216_placeholder"
+        },
+        {
+          "callSign": "WCNYDT4",
+          "channelNo": "24.4",
+          "duration": "30",
+          "endTime": "2026-09-13T01:00:00Z",
+          "filter": [
+            "filter-family"
+          ],
+          "flag": [
+            "Premiere"
+          ],
+          "program": {
+            "episode": "31",
+            "episodeTitle": "The Bark Banquet; Carl's Collection of To-Dos",
+            "id": "EP052844640101",
+            "isGeneric": "0",
+            "releaseYear": null,
+            "season": "1",
+            "seriesId": "SH05284464",
+            "shortDesc": "Carl wants to start his own family tradition after Sheldon i",
+            "title": "Carl the Collector",
+            "tmsId": "EP052844640101"
+          },
+          "rating": "TV-Y",
+          "seriesId": "SH05284464",
+          "startTime": "2026-09-13T00:30:00Z",
+          "tags": [
+            "Stereo",
+            "CC"
+          ],
+          "thumbnail": "p49216_placeholder"
+        },
+        {
+          "callSign": "WCNYDT4",
+          "channelNo": "24.4",
+          "duration": "30",
+          "endTime": "2026-09-13T01:30:00Z",
+          "filter": [
+            "filter-family"
+          ],
+          "flag": [],
+          "program": {
+            "episode": "6",
+            "episodeTitle": "Buzz and the Tree",
+            "id": "EP003618800155",
+            "isGeneric": "0",
+            "releaseYear": null,
+            "season": "13",
+            "seriesId": "SH00361880",
+            "shortDesc": "It's Arbor Day in Cyberspace, but Buzz is more interested in",
+            "title": "Cyberchase",
+            "tmsId": "EP003618800155"
+          },
+          "rating": "TV-Y",
+          "seriesId": "SH00361880",
+          "startTime": "2026-09-13T01:00:00Z",
+          "tags": [
+            "Stereo",
+            "CC",
+            "DVS"
+          ],
+          "thumbnail": "p49216_placeholder"
+        }
+      ],
+      "id": "4921632",
+      "stationFilters": [
+        "filter-family"
+      ],
+      "stationGenres": [
+        false
+      ],
+      "thumbnail": "//images.example.invalid/station/49216.png?w=55"
+    },
+    {
+      "affiliateCallSign": "null",
+      "affiliateName": "NATIONAL BROADCASTING COMPANY",
+      "callSign": "WKTVDT",
+      "channelId": "53158",
+      "channelNo": "1002",
+      "events": [
+        {
+          "callSign": "WKTVDT",
+          "channelNo": "2.1",
+          "duration": "210",
+          "endTime": "2026-09-13T03:00:00Z",
+          "filter": [
+            "filter-sports"
+          ],
+          "flag": [
+            "Live",
+            "New"
+          ],
+          "program": {
+            "episode": null,
+            "episodeTitle": "Iowa State at Iowa",
+            "id": "EP062700990343",
+            "isGeneric": "0",
+            "releaseYear": null,
+            "season": null,
+            "seriesId": "SH06270099",
+            "shortDesc": "The Iowa State Cyclones take on the No. 21 Iowa Hawkeyes at ",
+            "title": "College Football",
+            "tmsId": "EP062700990343"
+          },
+          "rating": null,
+          "seriesId": "SH06270099",
+          "startTime": "2026-09-12T23:30:00Z",
+          "tags": [
+            "CC"
+          ],
+          "thumbnail": "p53158_placeholder"
+        }
+      ],
+      "id": "5315899",
+      "stationFilters": [
+        "filter-sports",
+        "filter-news"
+      ],
+      "stationGenres": [
+        false
+      ],
+      "thumbnail": "//images.example.invalid/station/53158.png?w=55"
+    }
+  ]
+}

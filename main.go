@@ -320,14 +320,20 @@ func runScrape(pref web.Preferences, tmdbClient *tmdb.Client, baseURL string, ch
 	return tvGuide, nil
 }
 
-func persistGuideFiles(tvGuide *guide.TVGuide, sourceFingerprint string) error {
-	log.Printf("Rendering XMLTV: %d channels, %d programs", len(tvGuide.Channels), len(tvGuide.Programs))
-
-	// Parse embedded template
+// renderXMLTV writes the guide as XMLTV using the embedded template.
+func renderXMLTV(w io.Writer, tvGuide *guide.TVGuide) error {
 	tmpl, err := template.ParseFS(guideTmplFS, "guide.tmpl")
 	if err != nil {
 		return fmt.Errorf("failed to parse template: %w", err)
 	}
+	if err := tmpl.Execute(w, tvGuide); err != nil {
+		return fmt.Errorf("failed to execute template: %w", err)
+	}
+	return nil
+}
+
+func persistGuideFiles(tvGuide *guide.TVGuide, sourceFingerprint string) error {
+	log.Printf("Rendering XMLTV: %d channels, %d programs", len(tvGuide.Channels), len(tvGuide.Programs))
 
 	// Atomic write: write to temp file, then rename
 	tmpFile, err := os.CreateTemp(".", "xmlguide-*.tmp")
@@ -336,10 +342,10 @@ func persistGuideFiles(tvGuide *guide.TVGuide, sourceFingerprint string) error {
 	}
 	tmpName := tmpFile.Name()
 
-	if err := tmpl.Execute(tmpFile, tvGuide); err != nil {
+	if err := renderXMLTV(tmpFile, tvGuide); err != nil {
 		tmpFile.Close()
 		os.Remove(tmpName)
-		return fmt.Errorf("failed to execute template: %w", err)
+		return err
 	}
 	if err := tmpFile.Close(); err != nil {
 		os.Remove(tmpName)
