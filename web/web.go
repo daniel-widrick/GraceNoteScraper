@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -16,6 +17,12 @@ import (
 const (
 	userAgent       = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_9_3) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/35.0.1916.47 Safari/537.36"
 	gridMaxAttempts = 4
+	// gridTimespanHours is the window the scraper requests per grid slot.
+	gridTimespanHours = 6
+	// probeTimespanHours is the window used when only the channel list matters.
+	// Gracenote returns the full lineup regardless of window size, and a one-hour
+	// window is roughly a quarter of the payload of a six-hour one.
+	probeTimespanHours = 1
 )
 
 var gridRetryDelays = []time.Duration{2 * time.Second, 5 * time.Second, 10 * time.Second}
@@ -93,7 +100,7 @@ func (c *Client) GetDataByTime(t int64) (*GridResponse, error) {
 func (c *Client) GetDataByTimeContext(ctx context.Context, t int64) (*GridResponse, error) {
 	var lastErr error
 	for attempt := 1; attempt <= gridMaxAttempts; attempt++ {
-		grid, err := c.getDataByTimeOnce(ctx, t)
+		grid, err := c.getDataByTimeOnce(ctx, t, gridTimespanHours)
 		if err == nil {
 			if attempt > 1 {
 				log.Printf("Gracenote grid time=%d succeeded on attempt %d/%d", t, attempt, gridMaxAttempts)
@@ -124,10 +131,18 @@ func (c *Client) GetDataByTimeContext(ctx context.Context, t int64) (*GridRespon
 	return nil, fmt.Errorf("Gracenote grid time=%d failed after %d attempts (%v); cached fallback unavailable: %w", t, gridMaxAttempts, lastErr, err)
 }
 
-func (c *Client) getDataByTimeOnce(ctx context.Context, t int64) (*GridResponse, error) {
+// ProbeGridContext fetches a one-hour grid slice with a single attempt and no
+// caching. It exists for lineup probes from /setup, where only the channel list
+// is needed and the response must not replace the scraper's cached six-hour
+// grid for the same slot.
+func (c *Client) ProbeGridContext(ctx context.Context, t int64) (*GridResponse, error) {
+	return c.getDataByTimeOnce(ctx, t, probeTimespanHours)
+}
+
+func (c *Client) getDataByTimeOnce(ctx context.Context, t int64, timespanHours int) (*GridResponse, error) {
 	log.Printf("headendId=%s lineupId=%s zipCode=%s", c.pref.Headend, c.pref.LineupId, c.pref.ZipCode)
 	params := url.Values{
-		"aid": {"orbebb"}, "lineupId": {c.pref.LineupId}, "timespan": {"6"}, "headendId": {c.pref.Headend},
+		"aid": {"orbebb"}, "lineupId": {c.pref.LineupId}, "timespan": {strconv.Itoa(timespanHours)}, "headendId": {c.pref.Headend},
 		"country": {c.pref.Country}, "device": {c.pref.Device}, "postalCode": {c.pref.ZipCode}, "isOverride": {"true"},
 		"time": {fmt.Sprintf("%d", t)}, "timezone": {""}, "pref": {"16,256"}, "userId": {"-"}, "languagecode": {c.pref.Language},
 	}

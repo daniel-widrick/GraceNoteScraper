@@ -36,7 +36,7 @@ func (webProviderChannelCounter) CountChannels(ctx context.Context, country, pos
 		Country: country, ZipCode: postalCode, Headend: provider.HeadendID,
 		LineupId: provider.LineupID, Device: provider.Device, Language: language,
 	})
-	grid, err := client.GetDataByTimeContext(ctx, time.Now().UTC().Truncate(6*time.Hour).Unix())
+	grid, err := client.ProbeGridContext(ctx, time.Now().UTC().Truncate(6*time.Hour).Unix())
 	if err != nil {
 		return 0, err
 	}
