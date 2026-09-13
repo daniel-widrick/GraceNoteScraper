@@ -71,7 +71,22 @@ body::after {
   text-transform: uppercase;
 }
 
-.topbar-right { text-align: right; }
+.topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  text-align: right;
+}
+
+.topbar-setup {
+  color: var(--dim);
+  font-size: 10px;
+  letter-spacing: 1px;
+  text-decoration: none;
+  text-transform: uppercase;
+}
+
+.topbar-setup:hover { color: var(--cyan); }
 
 .topbar-clock {
   font-size: 18px;
@@ -669,8 +684,11 @@ body.livetv-on .detail-bar { display: none !important; }
 <div class="topbar">
   <span class="topbar-title">The Grid</span>
   <div class="topbar-right">
-    <div class="topbar-clock" id="clock">--:--:--</div>
-    <div class="topbar-date" id="date">---</div>
+    <a class="topbar-setup" href="/setup">Lineup setup</a>
+    <div>
+      <div class="topbar-clock" id="clock">--:--:--</div>
+      <div class="topbar-date" id="date">---</div>
+    </div>
   </div>
 </div>
 
@@ -776,7 +794,11 @@ body.livetv-on .detail-bar { display: none !important; }
   function fetchGuide() {
     fetch('/api/guide.json')
       .then(function(r) {
-        if (!r.ok) throw new Error('HTTP ' + r.status);
+        if (!r.ok) {
+          var error = new Error(r.status === 503 ? 'BUILDING GUIDE \u2014 CHECKING AGAIN SOON' : 'HTTP ' + r.status);
+          error.building = r.status === 503;
+          throw error;
+        }
         return r.json();
       })
       .then(function(data) {
@@ -789,10 +811,11 @@ body.livetv-on .detail-bar { display: none !important; }
       })
       .catch(function(err) {
         if (!guideData) {
-          statusEl.textContent  = 'SIGNAL LOST \u2014 ' + err.message;
-          statusEl.className    = 'status-msg error';
+          statusEl.textContent  = err.building ? err.message : 'SIGNAL LOST \u2014 ' + err.message;
+          statusEl.className    = err.building ? 'status-msg' : 'status-msg error';
           statusEl.style.display = '';
         }
+        if (err.building) setTimeout(fetchGuide, 30000);
       });
   }
   fetchGuide();

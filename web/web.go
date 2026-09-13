@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -10,8 +11,6 @@ import (
 	"net/url"
 	"strings"
 	"time"
-
-	"github.com/daniel-widrick/GraceNoteScraper/util"
 )
 
 const (
@@ -74,17 +73,6 @@ type GuideSource struct {
 	Language string `json:"language"`
 }
 
-func currentPreferences() Preferences {
-	return Preferences{
-		Country:  util.GetEnv("GN_COUNTRY", "USA"),
-		ZipCode:  util.GetEnv("GN_ZIPCODE", "13490"),
-		Headend:  util.GetEnv("GN_HEADEND", "lineupId"),
-		LineupId: util.GetEnv("GN_LINEUP", "USA-lineupId-DEFAULT"),
-		Device:   util.GetEnv("GN_DEVICE", "-"),
-		Language: util.GetEnv("GN_LANGUAGE", "en-us"),
-	}
-}
-
 func (p Preferences) Source() GuideSource {
 	return GuideSource{Country: p.Country, ZipCode: p.ZipCode, Headend: p.Headend, LineupID: p.LineupId, Device: p.Device, Language: p.Language}
 }
@@ -99,9 +87,13 @@ func (c *Client) Source() GuideSource {
 }
 
 func (c *Client) GetDataByTime(t int64) (*GridResponse, error) {
+	return c.GetDataByTimeContext(context.Background(), t)
+}
+
+func (c *Client) GetDataByTimeContext(ctx context.Context, t int64) (*GridResponse, error) {
 	var lastErr error
 	for attempt := 1; attempt <= gridMaxAttempts; attempt++ {
-		grid, err := c.getDataByTimeOnce(t)
+		grid, err := c.getDataByTimeOnce(ctx, t)
 		if err == nil {
 			if attempt > 1 {
 				log.Printf("Gracenote grid time=%d succeeded on attempt %d/%d", t, attempt, gridMaxAttempts)
@@ -117,7 +109,11 @@ func (c *Client) GetDataByTime(t int64) (*GridResponse, error) {
 		}
 		delay := gridRetryDelays[attempt-1]
 		log.Printf("Gracenote grid time=%d attempt %d/%d failed: %v; retrying in %s", t, attempt, gridMaxAttempts, err, delay)
-		time.Sleep(delay)
+		select {
+		case <-time.After(delay):
+		case <-ctx.Done():
+			return nil, fmt.Errorf("Gracenote grid time=%d cancelled after attempt %d: %w", t, attempt, ctx.Err())
+		}
 	}
 
 	fallback, age, err := loadGridCache(t, c.Source())
@@ -128,7 +124,7 @@ func (c *Client) GetDataByTime(t int64) (*GridResponse, error) {
 	return nil, fmt.Errorf("Gracenote grid time=%d failed after %d attempts (%v); cached fallback unavailable: %w", t, gridMaxAttempts, lastErr, err)
 }
 
-func (c *Client) getDataByTimeOnce(t int64) (*GridResponse, error) {
+func (c *Client) getDataByTimeOnce(ctx context.Context, t int64) (*GridResponse, error) {
 	log.Printf("headendId=%s lineupId=%s zipCode=%s", c.pref.Headend, c.pref.LineupId, c.pref.ZipCode)
 	params := url.Values{
 		"aid": {"orbebb"}, "lineupId": {c.pref.LineupId}, "timespan": {"6"}, "headendId": {c.pref.Headend},
@@ -137,7 +133,7 @@ func (c *Client) getDataByTimeOnce(t int64) (*GridResponse, error) {
 	}
 	gridURL := "https://tvlistings.gracenote.com/api/grid?" + params.Encode()
 	log.Printf("Fetching: %s", gridURL)
-	req, err := http.NewRequest("GET", gridURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, gridURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("GetDataByTime failed to build request: %w", err)
 	}
@@ -163,15 +159,21 @@ func (c *Client) getDataByTimeOnce(t int64) (*GridResponse, error) {
 	return &grid, nil
 }
 
-func NewClient() *Client {
+func NewClient(pref Preferences) *Client {
 	jar, err := cookiejar.New(nil)
 	if err != nil {
 		log.Fatalf("Unable to create cookie storage for http client: %v", err)
 		return nil
 	}
 	client := &Client{
-		Client: &http.Client{Jar: jar, Timeout: 15 * time.Second, Transport: &headerTransport{rt: http.DefaultTransport}},
-		pref:   currentPreferences(),
+		Client: &http.Client{
+			Jar:     jar,
+			Timeout: 15 * time.Second,
+			Transport: &headerTransport{
+				rt: http.DefaultTransport,
+			},
+		},
+		pref: pref,
 	}
 	if err := pruneGridCache(client.Source(), time.Now().UTC().Add(-48*time.Hour)); err != nil {
 		log.Printf("Gracenote grid cache: prune failed: %v", err)

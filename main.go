@@ -6,6 +6,7 @@ import (
 	"embed"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"html"
@@ -24,6 +25,7 @@ import (
 	"text/template"
 	"time"
 
+	"github.com/daniel-widrick/GraceNoteScraper/appconfig"
 	"github.com/daniel-widrick/GraceNoteScraper/guide"
 	"github.com/daniel-widrick/GraceNoteScraper/tmdb"
 	"github.com/daniel-widrick/GraceNoteScraper/tvlogo"
@@ -180,10 +182,32 @@ func xmltvTimeToISO(xmltvTime string) string {
 
 // ---------- Scraping ----------
 
+var errScrapeSourceChanged = errors.New("active lineup changed during scrape")
+
+type guidePersister func(*guide.TVGuide) (bool, error)
+
+type scrapeProgressUpdate struct {
+	Stage     string
+	Message   string
+	Completed int
+	Total     int
+	Channels  int
+	Programs  int
+}
+
+type scrapeProgressReporter func(scrapeProgressUpdate)
+
 // runScrape performs the full scrape cycle and returns the populated TVGuide.
 // It also writes xmlguide.xmltv atomically.
-func runScrape(tmdbClient *tmdb.Client, logoClient *tvlogo.Client, lang, country, baseURL string, channelFilter map[string]bool) (*guide.TVGuide, error) {
-	client := web.NewClient()
+func runScrape(pref web.Preferences, tmdbClient *tmdb.Client, baseURL string, channelFilter map[string]bool, sourceFingerprint string, sourceCurrent func() bool, persister guidePersister, reporters ...scrapeProgressReporter) (*guide.TVGuide, error) {
+	report := func(update scrapeProgressUpdate) {
+		for _, reporter := range reporters {
+			if reporter != nil {
+				reporter(update)
+			}
+		}
+	}
+	client := web.NewClient(pref)
 
 	now := time.Now().UTC()
 	midnight := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
@@ -196,8 +220,12 @@ func runScrape(tmdbClient *tmdb.Client, logoClient *tvlogo.Client, lang, country
 	totalSlots := int(endTime.Sub(midnight) / (6 * time.Hour))
 	slot := 0
 	for t := midnight; t.Before(endTime); t = t.Add(6 * time.Hour) {
+		if sourceCurrent != nil && !sourceCurrent() {
+			return nil, errScrapeSourceChanged
+		}
 		slot++
 		ts := t.Unix()
+		report(scrapeProgressUpdate{Stage: "gracenote", Message: fmt.Sprintf("Downloading guide data (%d of %d)", slot, totalSlots), Completed: slot - 1, Total: totalSlots, Channels: len(channelMap), Programs: len(programs)})
 		log.Printf("Fetching grid %d/%d for time=%d (%s)", slot, totalSlots, ts, t.Format(time.RFC3339))
 
 		grid, err := client.GetDataByTime(ts)
@@ -217,11 +245,12 @@ func runScrape(tmdbClient *tmdb.Client, logoClient *tvlogo.Client, lang, country
 					continue
 				}
 				eventMap[dedupKey] = true
-				programs = append(programs, guide.ConvertEvent(ev, ch.ChannelID, lang, country))
+				programs = append(programs, guide.ConvertEvent(ev, ch.ChannelID, pref.Language, pref.Country))
 			}
 		}
 
 		log.Printf("Channels so far: %d, Events so far: %d", len(channelMap), len(programs))
+		report(scrapeProgressUpdate{Stage: "gracenote", Message: fmt.Sprintf("Downloaded guide data (%d of %d)", slot, totalSlots), Completed: slot, Total: totalSlots, Channels: len(channelMap), Programs: len(programs)})
 
 		if t.Add(6 * time.Hour).Before(endTime) {
 			time.Sleep(5 * time.Second)
@@ -233,8 +262,15 @@ func runScrape(tmdbClient *tmdb.Client, logoClient *tvlogo.Client, lang, country
 		channels = append(channels, ch)
 	}
 
+	logoClient := tvlogo.NewClient(pref.Country, "tvlogo_cache.json")
+	if logoClient != nil {
+		defer logoClient.Close()
+	}
+	report(scrapeProgressUpdate{Stage: "logos", Message: "Matching channel logos", Channels: len(channels), Programs: len(programs)})
 	enrichChannelIcons(logoClient, channels)
-	enrichProgramThumbnails(tmdbClient, programs)
+	enrichProgramThumbnails(tmdbClient, programs, func(completed, total int) {
+		report(scrapeProgressUpdate{Stage: "tmdb", Message: fmt.Sprintf("Enriching program titles (%d of %d)", completed, total), Completed: completed, Total: total, Channels: len(channels), Programs: len(programs)})
+	})
 	fixDeadImageURLs(programs)
 
 	// Rewrite image URLs to go through the local proxy
@@ -269,37 +305,58 @@ func runScrape(tmdbClient *tmdb.Client, logoClient *tvlogo.Client, lang, country
 		log.Printf("Channel filter: %d → %d channels (Jellyfin has %d)", before, len(tvGuide.Channels), len(channelFilter))
 	}
 
+	if persister != nil {
+		report(scrapeProgressUpdate{Stage: "saving", Message: "Rendering and saving the guide", Channels: len(tvGuide.Channels), Programs: len(tvGuide.Programs)})
+		persisted, err := persister(tvGuide)
+		if err != nil {
+			return nil, err
+		}
+		if !persisted {
+			return nil, errScrapeSourceChanged
+		}
+	} else if err := persistGuideFiles(tvGuide, sourceFingerprint); err != nil {
+		return nil, err
+	}
+	return tvGuide, nil
+}
+
+func persistGuideFiles(tvGuide *guide.TVGuide, sourceFingerprint string) error {
 	log.Printf("Rendering XMLTV: %d channels, %d programs", len(tvGuide.Channels), len(tvGuide.Programs))
 
 	// Parse embedded template
 	tmpl, err := template.ParseFS(guideTmplFS, "guide.tmpl")
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse template: %w", err)
+		return fmt.Errorf("failed to parse template: %w", err)
 	}
 
 	// Atomic write: write to temp file, then rename
 	tmpFile, err := os.CreateTemp(".", "xmlguide-*.tmp")
 	if err != nil {
-		return nil, fmt.Errorf("failed to create temp file: %w", err)
+		return fmt.Errorf("failed to create temp file: %w", err)
 	}
 	tmpName := tmpFile.Name()
 
 	if err := tmpl.Execute(tmpFile, tvGuide); err != nil {
 		tmpFile.Close()
 		os.Remove(tmpName)
-		return nil, fmt.Errorf("failed to execute template: %w", err)
+		return fmt.Errorf("failed to execute template: %w", err)
 	}
-	tmpFile.Close()
+	if err := tmpFile.Close(); err != nil {
+		os.Remove(tmpName)
+		return fmt.Errorf("failed to close temporary guide: %w", err)
+	}
 
 	if err := os.Rename(tmpName, "xmlguide.xmltv"); err != nil {
 		os.Remove(tmpName)
-		return nil, fmt.Errorf("failed to rename output file: %w", err)
+		return fmt.Errorf("failed to rename output file: %w", err)
 	}
-	os.Chmod("xmlguide.xmltv", 0644)
+	if err := os.Chmod("xmlguide.xmltv", 0644); err != nil {
+		return fmt.Errorf("failed to set guide permissions: %w", err)
+	}
 
 	log.Printf("Wrote guide to xmlguide.xmltv")
-	saveGuideCache(tvGuide)
-	return tvGuide, nil
+	saveGuideCache(tvGuide, sourceFingerprint)
+	return nil
 }
 
 // ---------- Guide cache ----------
@@ -307,13 +364,14 @@ func runScrape(tmdbClient *tmdb.Client, logoClient *tvlogo.Client, lang, country
 const guideCachePath = "guide_cache.json"
 
 type guideCache struct {
-	SavedAt time.Time     `json:"saved_at"`
-	Guide   guide.TVGuide `json:"guide"`
+	SavedAt           time.Time     `json:"saved_at"`
+	SourceFingerprint string        `json:"source_fingerprint"`
+	Guide             guide.TVGuide `json:"guide"`
 }
 
 // saveGuideCache persists the TVGuide to a JSON file.
-func saveGuideCache(g *guide.TVGuide) {
-	data, err := json.Marshal(guideCache{SavedAt: time.Now(), Guide: *g})
+func saveGuideCache(g *guide.TVGuide, sourceFingerprint string) {
+	data, err := json.Marshal(guideCache{SavedAt: time.Now(), SourceFingerprint: sourceFingerprint, Guide: *g})
 	if err != nil {
 		log.Printf("guide cache: failed to marshal: %v", err)
 		return
@@ -327,7 +385,7 @@ func saveGuideCache(g *guide.TVGuide) {
 
 // loadGuideCache loads the TVGuide from the JSON cache if it's younger than maxAge.
 // Returns the guide, its age, and whether it was loaded.
-func loadGuideCache(maxAge time.Duration) (*guide.TVGuide, time.Duration, bool) {
+func loadGuideCache(maxAge time.Duration, sourceFingerprint string) (*guide.TVGuide, time.Duration, bool) {
 	data, err := os.ReadFile(guideCachePath)
 	if err != nil {
 		return nil, 0, false
@@ -337,11 +395,23 @@ func loadGuideCache(maxAge time.Duration) (*guide.TVGuide, time.Duration, bool) 
 		log.Printf("guide cache: corrupt, ignoring: %v", err)
 		return nil, 0, false
 	}
+	if c.SourceFingerprint != sourceFingerprint {
+		log.Println("guide cache: source changed, ignoring cached guide")
+		return nil, 0, false
+	}
 	age := time.Since(c.SavedAt)
 	if age >= maxAge {
 		return nil, age, false
 	}
 	return &c.Guide, age, true
+}
+
+func invalidateCurrentGuideArtifacts() {
+	for _, path := range []string{"xmlguide.xmltv", guideCachePath} {
+		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+			log.Printf("setup: could not remove stale %s: %v", path, err)
+		}
+	}
 }
 
 // ---------- File rotation ----------
@@ -378,10 +448,9 @@ func rotateFiles() {
 
 // ---------- Background scraper ----------
 
-// startScraper runs the scrape cycle on a 24-hour ticker.
-// If initialDelay > 0, the first scrape fires after that delay instead of 24h
-// (used when we skipped the startup scrape because the file was still fresh).
-func startScraper(ctx context.Context, state *GuideState, tmdbClient *tmdb.Client, logoClient *tvlogo.Client, lang, country, baseURL string, initialDelay time.Duration, jellyfinURL, jellyfinAPIKey string, filterEnabled bool) {
+// startScraper runs the active lineup on a 24-hour timer and accepts immediate
+// requests after setup changes.
+func startScraper(ctx context.Context, state *GuideState, store *appconfig.Store, tmdbClient *tmdb.Client, baseURL string, initialDelay time.Duration, trigger <-chan struct{}, jellyfinURL, jellyfinAPIKey string, filterEnabled bool, status *scrapeStatus) {
 	if initialDelay <= 0 {
 		initialDelay = 24 * time.Hour
 	}
@@ -390,58 +459,140 @@ func startScraper(ctx context.Context, state *GuideState, tmdbClient *tmdb.Clien
 	defer timer.Stop()
 
 	for {
+		reason := "scheduled"
 		select {
 		case <-ctx.Done():
 			log.Println("Scraper shutting down")
 			return
 		case <-timer.C:
-			log.Println("Starting scheduled scrape cycle")
+		case <-trigger:
+			reason = "setup-requested"
+		}
 
-			var channelFilter map[string]bool
-			if filterEnabled {
-				cf, err := fetchJellyfinChannelNumbers(jellyfinURL, jellyfinAPIKey)
-				if err != nil {
-					log.Printf("Warning: could not fetch Jellyfin channels for filter, proceeding unfiltered: %v", err)
-				} else {
-					channelFilter = cf
-				}
-			}
+		config, configured, _ := store.Get()
+		if !configured {
+			log.Println("Scraper is waiting for a provider selection at /setup")
+			resetScrapeTimer(timer, 24*time.Hour)
+			continue
+		}
 
-			g, err := runScrape(tmdbClient, logoClient, lang, country, baseURL, channelFilter)
+		log.Printf("Starting %s scrape for %s", reason, config.Gracenote.ProviderName)
+		if status != nil {
+			status.start("Starting guide download")
+		}
+		var channelFilter map[string]bool
+		if filterEnabled {
+			cf, err := fetchJellyfinChannelNumbers(jellyfinURL, jellyfinAPIKey)
 			if err != nil {
-				log.Printf("Scheduled scrape failed: %v", err)
+				log.Printf("Warning: could not fetch Jellyfin channels for filter, proceeding unfiltered: %v", err)
 			} else {
+				channelFilter = cf
+			}
+		}
+
+		fingerprint := config.Fingerprint()
+		persister := func(g *guide.TVGuide) (bool, error) {
+			return store.WhileCurrent(fingerprint, func() error {
+				if err := persistGuideFiles(g, fingerprint); err != nil {
+					return err
+				}
 				state.Update(g)
 				rotateFiles()
-				log.Println("Scheduled scrape complete")
-			}
-			// All subsequent runs at 24h intervals
-			timer.Reset(24 * time.Hour)
+				return nil
+			})
 		}
+		sourceCurrent := func() bool {
+			current, ok, _ := store.Get()
+			return ok && current.Fingerprint() == fingerprint
+		}
+		var reporter scrapeProgressReporter
+		if status != nil {
+			reporter = func(update scrapeProgressUpdate) {
+				status.update(update.Stage, update.Message, update.Completed, update.Total, update.Channels, update.Programs)
+			}
+		}
+		builtGuide, err := runScrape(config.Preferences(), tmdbClient, baseURL, channelFilter, fingerprint, sourceCurrent, persister, reporter)
+		nextDelay := 24 * time.Hour
+		if errors.Is(err, errScrapeSourceChanged) {
+			log.Println("Discarded scrape because the active lineup changed")
+			if status != nil {
+				status.queue("Waiting to build the newly selected lineup")
+			}
+		} else if err != nil {
+			log.Printf("Scrape failed: %v", err)
+			if status != nil {
+				status.fail("Guide build failed: " + err.Error())
+			}
+			nextDelay = 15 * time.Minute
+		} else {
+			log.Println("Scrape complete")
+			if status != nil {
+				status.ready(len(builtGuide.Channels), len(builtGuide.Programs))
+			}
+		}
+		resetScrapeTimer(timer, nextDelay)
+	}
+}
+
+func resetScrapeTimer(timer *time.Timer, delay time.Duration) {
+	if !timer.Stop() {
+		select {
+		case <-timer.C:
+		default:
+		}
+	}
+	timer.Reset(delay)
+}
+
+func queueScrape(trigger chan<- struct{}) {
+	select {
+	case trigger <- struct{}{}:
+	default:
 	}
 }
 
 // ---------- HTTP handlers ----------
 
-func handleIndex(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path != "/" {
-		http.NotFound(w, r)
-		return
+func handleIndex(store *appconfig.Store) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/" {
+			http.NotFound(w, r)
+			return
+		}
+		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			w.Header().Set("Allow", "GET, HEAD")
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if _, configured, _ := store.Get(); !configured {
+			http.Redirect(w, r, "/setup", http.StatusSeeOther)
+			return
+		}
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		if r.Method == http.MethodGet {
+			_, _ = w.Write(indexHTML)
+		}
 	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Write(indexHTML)
 }
 
-func handleXMLTV(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/xml")
-	http.ServeFile(w, r, "xmlguide.xmltv")
+func handleXMLTV(state *GuideState) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if state.Get() == nil {
+			w.Header().Set("Retry-After", "30")
+			http.Error(w, "Guide is being generated", http.StatusServiceUnavailable)
+			return
+		}
+		w.Header().Set("Content-Type", "application/xml")
+		http.ServeFile(w, r, "xmlguide.xmltv")
+	}
 }
 
 func handleGuideJSON(state *GuideState) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		g := state.Get()
 		if g == nil {
-			http.Error(w, "Guide not available yet", http.StatusServiceUnavailable)
+			w.Header().Set("Retry-After", "30")
+			http.Error(w, "Guide is being generated", http.StatusServiceUnavailable)
 			return
 		}
 
@@ -823,10 +974,13 @@ func main() {
 		log.Println("No .env file found, using environment variables")
 	}
 
-	lang := util.GetEnv("GN_LANGUAGE", "en")
-	country := util.GetEnv("GN_COUNTRY", "USA")
 	port := util.GetEnv("PORT", "8080")
 	baseURL := util.GetEnv("BASE_URL", "")
+	configPath := util.GetEnv("CONFIG_PATH", "config.json")
+	configStore, configErr := appconfig.LoadStore(configPath)
+	if configErr != nil {
+		log.Printf("Configuration could not be loaded; /setup will remain available: %v", configErr)
+	}
 
 	jellyfinURL := strings.TrimRight(util.GetEnv("JELLYFIN_URL", ""), "/")
 	jellyfinAPIKey := util.GetEnv("JELLYFIN_API_KEY", "")
@@ -858,72 +1012,97 @@ func main() {
 	}
 	defer tmdbClient.Close()
 
-	logoClient := tvlogo.NewClient(country, "tvlogo_cache.json")
-	if logoClient != nil {
-		log.Println("TV logo enrichment enabled")
-	} else {
-		log.Printf("TV logo enrichment not available for country %s", country)
-	}
-	defer logoClient.Close()
-
 	// --guide-only: always scrape, write output, exit
 	if *guideOnly {
+		config, configured, _ := configStore.Get()
+		if !configured {
+			log.Fatal("No provider is configured. Run server mode and open /setup, or provide complete GN_* environment settings.")
+		}
 		log.Println("Starting scrape (guide-only mode)...")
-		if _, err := runScrape(tmdbClient, logoClient, lang, country, baseURL, channelFilter); err != nil {
+		if _, err := runScrape(config.Preferences(), tmdbClient, baseURL, channelFilter, config.Fingerprint(), nil, nil); err != nil {
 			log.Fatalf("Scrape failed: %v", err)
 		}
 		log.Println("--guide-only: done")
 		return
 	}
 
-	// Server mode: try loading cached guide data to skip a slow scrape.
-	// Always re-scrape if the XMLTV file or guide cache is missing.
+	// Server mode starts immediately so first-run setup remains available while
+	// the initial guide is generated in the background.
 	var g *guide.TVGuide
-	var nextScrapeIn time.Duration
-	_, xmltvMissing := os.Stat("xmlguide.xmltv")
-	cached, age, cacheOK := loadGuideCache(4 * time.Hour)
-	if cacheOK && xmltvMissing == nil {
-		log.Printf("Loaded guide from cache (%s old), skipping scrape", age.Round(time.Second))
-		g = cached
-		if channelFilter != nil {
-			before := len(g.Channels)
-			g = filterGuideChannels(g, channelFilter)
-			log.Printf("Channel filter: %d → %d channels (cached guide)", before, len(g.Channels))
-		}
-		// Schedule next scrape for when the cache turns 24h old
-		nextScrapeIn = 24*time.Hour - age
-		if nextScrapeIn < time.Hour {
-			nextScrapeIn = time.Hour
+	nextScrapeIn := 24 * time.Hour
+	config, configured, source := configStore.Get()
+	if configured {
+		log.Printf("Active lineup: %s (%s)", config.Gracenote.ProviderName, source)
+		_, xmltvErr := os.Stat("xmlguide.xmltv")
+		cached, age, cacheOK := loadGuideCache(4*time.Hour, config.Fingerprint())
+		if cacheOK && xmltvErr == nil {
+			log.Printf("Loaded guide from cache (%s old), skipping initial scrape", age.Round(time.Second))
+			g = cached
+			if channelFilter != nil {
+				before := len(g.Channels)
+				g = filterGuideChannels(g, channelFilter)
+				log.Printf("Channel filter: %d → %d channels (cached guide)", before, len(g.Channels))
+			}
+			nextScrapeIn = 24*time.Hour - age
+			if nextScrapeIn < time.Hour {
+				nextScrapeIn = time.Hour
+			}
+		} else {
+			invalidateCurrentGuideArtifacts()
+			nextScrapeIn = 100 * time.Millisecond
+			log.Println("A fresh guide will be generated in the background")
 		}
 	} else {
-		if xmltvMissing != nil {
-			log.Println("xmlguide.xmltv missing, scrape required")
-		}
-		log.Println("Starting initial scrape...")
-		var err error
-		g, err = runScrape(tmdbClient, logoClient, lang, country, baseURL, channelFilter)
-		if err != nil {
-			log.Fatalf("Initial scrape failed: %v", err)
-		}
-		rotateFiles()
-		nextScrapeIn = 24 * time.Hour
+		log.Println("No provider configured; open /setup to choose a lineup")
 	}
 
 	state := &GuideState{}
 	state.Update(g)
+	guideChannels, guidePrograms := 0, 0
+	if g != nil {
+		guideChannels = len(g.Channels)
+		guidePrograms = len(g.Programs)
+	}
+	guideStatus := newScrapeStatus(g != nil, guideChannels, guidePrograms)
 
 	// Signal context for graceful shutdown
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	scrapeTrigger := make(chan struct{}, 1)
+	setupHandlers := &setupServer{
+		store:          configStore,
+		providers:      web.NewProviderClient(),
+		channelCounter: webProviderChannelCounter{},
+		scrapeStatus:   guideStatus,
+		onProviderSaved: func(changed bool) {
+			if changed {
+				state.Update(nil)
+				invalidateCurrentGuideArtifacts()
+			}
+			guideStatus.queue("Guide build queued")
+			queueScrape(scrapeTrigger)
+		},
+	}
+
 	// Start background scraper
-	log.Printf("Next scrape in %s", nextScrapeIn.Round(time.Minute))
-	go startScraper(ctx, state, tmdbClient, logoClient, lang, country, baseURL, nextScrapeIn, jellyfinURL, jellyfinAPIKey, channelFilterEnabled)
+	if configured && nextScrapeIn < time.Second {
+		log.Println("Initial scrape queued")
+		guideStatus.queue("Initial guide build queued")
+	} else {
+		log.Printf("Next scrape in %s", nextScrapeIn.Round(time.Minute))
+	}
+	go startScraper(ctx, state, configStore, tmdbClient, baseURL, nextScrapeIn, scrapeTrigger, jellyfinURL, jellyfinAPIKey, channelFilterEnabled, guideStatus)
 
 	// HTTP server
 	mux := http.NewServeMux()
-	mux.HandleFunc("/", handleIndex)
-	mux.HandleFunc("/xmlguide.xmltv", handleXMLTV)
+	mux.HandleFunc("/", handleIndex(configStore))
+	mux.HandleFunc("/setup", setupHandlers.handlePage)
+	mux.HandleFunc("/api/setup/config", setupHandlers.handleConfig)
+	mux.HandleFunc("/api/setup/providers", setupHandlers.handleProviders)
+	mux.HandleFunc("/api/setup/provider", setupHandlers.handleProvider)
+	mux.HandleFunc("/api/setup/status", setupHandlers.handleScrapeStatus)
+	mux.HandleFunc("/xmlguide.xmltv", handleXMLTV(state))
 	mux.HandleFunc("/api/guide.json", handleGuideJSON(state))
 	mux.HandleFunc("/img", handleImage)
 	mux.HandleFunc("/api/livetv/config", handleLiveTVConfig(jellyfinURL, jellyfinAPIKey))
@@ -971,7 +1150,7 @@ func xmlEscape(s string) string {
 
 // replaces broken Gracenote thumbnail URLs with TMDB
 // poster images, star ratings, dates, and descriptions.
-func enrichProgramThumbnails(client *tmdb.Client, programs []guide.Program) {
+func enrichProgramThumbnails(client *tmdb.Client, programs []guide.Program, progress ...func(completed, total int)) {
 	if client == nil {
 		return
 	}
@@ -1001,11 +1180,21 @@ func enrichProgramThumbnails(client *tmdb.Client, programs []guide.Program) {
 	}
 
 	log.Printf("TMDB: looking up %d unique titles", len(unique))
+	for _, update := range progress {
+		if update != nil {
+			update(0, len(unique))
+		}
+	}
 
 	// Phase 2: lookup each unique title
 	results := make(map[titleKey]tmdb.CacheEntry)
-	for _, k := range unique {
+	for index, k := range unique {
 		results[k] = client.Lookup(k.title, k.isMovie)
+		for _, update := range progress {
+			if update != nil {
+				update(index+1, len(unique))
+			}
+		}
 	}
 
 	// Phase 3: apply results back to programs
