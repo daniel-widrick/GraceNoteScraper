@@ -369,7 +369,13 @@ func persistGuideFiles(tvGuide *guide.TVGuide, sourceFingerprint string) error {
 
 const guideCachePath = "guide_cache.json"
 
+// guideCacheVersion is bumped whenever the persisted guide shape gains fields
+// that a scrape must populate. An older cache is rebuilt rather than served
+// with empty fields.
+const guideCacheVersion = 2
+
 type guideCache struct {
+	Version           int           `json:"version"`
 	SavedAt           time.Time     `json:"saved_at"`
 	SourceFingerprint string        `json:"source_fingerprint"`
 	Guide             guide.TVGuide `json:"guide"`
@@ -377,7 +383,7 @@ type guideCache struct {
 
 // saveGuideCache persists the TVGuide to a JSON file.
 func saveGuideCache(g *guide.TVGuide, sourceFingerprint string) {
-	data, err := json.Marshal(guideCache{SavedAt: time.Now(), SourceFingerprint: sourceFingerprint, Guide: *g})
+	data, err := json.Marshal(guideCache{Version: guideCacheVersion, SavedAt: time.Now(), SourceFingerprint: sourceFingerprint, Guide: *g})
 	if err != nil {
 		log.Printf("guide cache: failed to marshal: %v", err)
 		return
@@ -399,6 +405,10 @@ func loadGuideCache(maxAge time.Duration, sourceFingerprint string) (*guide.TVGu
 	var c guideCache
 	if err := json.Unmarshal(data, &c); err != nil {
 		log.Printf("guide cache: corrupt, ignoring: %v", err)
+		return nil, 0, false
+	}
+	if c.Version != guideCacheVersion {
+		log.Printf("guide cache: schema version %d, want %d; rebuilding", c.Version, guideCacheVersion)
 		return nil, 0, false
 	}
 	if c.SourceFingerprint != sourceFingerprint {
