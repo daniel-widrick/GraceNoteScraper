@@ -13,9 +13,9 @@ type scrapeStatusSnapshot struct {
 	Total       int       `json:"total,omitempty"`
 	Channels    int       `json:"channels,omitempty"`
 	Programs    int       `json:"programs,omitempty"`
-	StartedAt   time.Time `json:"startedAt,omitempty"`
+	StartedAt   time.Time `json:"startedAt,omitzero"`
 	UpdatedAt   time.Time `json:"updatedAt"`
-	CompletedAt time.Time `json:"completedAt,omitempty"`
+	CompletedAt time.Time `json:"completedAt,omitzero"`
 }
 
 type scrapeStatus struct {

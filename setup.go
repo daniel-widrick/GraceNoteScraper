@@ -142,16 +142,11 @@ func (s *setupServer) addProviderChannelCounts(ctx context.Context, country, pos
 	if s.channelCounter == nil || len(providers) == 0 {
 		return
 	}
-	workers := 4
-	if workers > len(providers) {
-		workers = len(providers)
-	}
+	workers := min(4, len(providers))
 	jobs := make(chan int)
 	var wg sync.WaitGroup
 	for worker := 0; worker < workers; worker++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for index := range jobs {
 				count, err := s.channelCounter.CountChannels(ctx, country, postalCode, language, providers[index])
 				if err != nil {
@@ -161,7 +156,7 @@ func (s *setupServer) addProviderChannelCounts(ctx context.Context, country, pos
 				providers[index].ChannelCount = count
 				providers[index].ChannelCountKnown = true
 			}
-		}()
+		})
 	}
 	for index := range providers {
 		select {

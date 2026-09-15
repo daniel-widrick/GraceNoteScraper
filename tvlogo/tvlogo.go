@@ -552,8 +552,8 @@ func (c *Client) generateCandidates(callSign, affiliateName, channelNo string) [
 	add(bare)
 
 	// 7. Affiliate without leading "the" — "The Weather Channel" → "weather-channel"
-	if strings.HasPrefix(affiliate, "the ") {
-		add(slugify(strings.TrimPrefix(affiliate, "the ")))
+	if after, ok := strings.CutPrefix(affiliate, "the "); ok {
+		add(slugify(after))
 	}
 
 	// 8. Normalized affiliate (strip noise words) — fallback for unusual long-form names

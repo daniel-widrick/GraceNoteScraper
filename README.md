@@ -64,7 +64,7 @@ docker compose up -d --build
 
 ## Requirements
 
-- Docker and Docker Compose, **or** Go 1.25+ for building from source
+- Docker and Docker Compose, **or** Go 1.27+ for building from source
 - (Optional) A [TMDB API read access token](https://www.themoviedb.org/settings/api) for poster images and metadata
 
 ## Building from Source

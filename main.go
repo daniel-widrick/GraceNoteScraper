@@ -1163,10 +1163,7 @@ func main() {
 				g = filterGuideChannels(g, channelFilter)
 				log.Printf("Channel filter: %d → %d channels (cached guide)", before, len(g.Channels))
 			}
-			nextScrapeIn = 24*time.Hour - age
-			if nextScrapeIn < time.Hour {
-				nextScrapeIn = time.Hour
-			}
+			nextScrapeIn = max(24*time.Hour-age, time.Hour)
 		} else {
 			invalidateCurrentGuideArtifacts()
 			nextScrapeIn = 100 * time.Millisecond
